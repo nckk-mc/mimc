@@ -41,7 +41,9 @@
 	java -jar paper-1.14.4.jar -p 25566
 	
 	# 7. Build Waterfall
-    git clone https://github.com/PaperMC/Waterfall.git
+    cd ../../..
+	git clone https://github.com/PaperMC/Waterfall.git
+	cd waterfall
 	./waterfall build
 		
 	# 8. Set up testserver
