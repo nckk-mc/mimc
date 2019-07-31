@@ -56,5 +56,7 @@
 	sed -i 's/Just another Waterfall - Forced Host/Spawn node/g' config.yml
 	sed -i 's/restricted: false/restricted: false\n  child:\n    motd: \x27Child node\x27\n    address: localhost:25566\n    restricted: false/g' config.yml
 	sed -i 's/max_players: 1/max_players: 10000/g' config.yml
+	sed -i 's/online_mode: true/world_folder: ..\/..\/Paper\/work\/test_server\/\nonline_mode: true/g' config.yml
+	
 
 	
