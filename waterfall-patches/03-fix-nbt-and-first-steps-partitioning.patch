@@ -1,0 +1,868 @@
+diff --git a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+index 343f9d29..b4e17bec 100644
+--- a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
++++ b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+@@ -168,7 +168,7 @@ public class BungeeCord extends ProxyServer
+     }
+ 
+     // MIMC Start
+-    public final PartitionManager partitionManager = new PartitionManager();
++    public final PartitionManager partitionManager = new PartitionManager(this);
+     // MIMC End
+ 
+     public static BungeeCord getInstance()
+diff --git a/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java b/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
+index ede33cbd..632c3298 100644
+--- a/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
++++ b/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
+@@ -103,6 +103,7 @@ public abstract class Configuration implements ProxyConfig
+ 
+         // MIMC start
+         worldFolder = adapter.getString( "world_folder", worldFolder );
++        Preconditions.checkArgument( worldFolder != null && !worldFolder.isEmpty(), "No worldFolder defined" );
+         // MIMC end
+ 
+         disabledCommands = new CaseInsensitiveSet( (Collection<String>) adapter.getList( "disabled_commands", Arrays.asList( "disabledcommandhere" ) ) );
+@@ -112,6 +113,11 @@ public abstract class Configuration implements ProxyConfig
+         Map<String, ServerInfo> newServers = adapter.getServers();
+         Preconditions.checkArgument( newServers != null && !newServers.isEmpty(), "No servers defined" );
+ 
++        // MIMC start
++        BungeeCord.getInstance().partitionManager.initialize(getWorldFolder(), newServers);
++        // MIMC end
++
++
+         if ( servers == null )
+         {
+             servers = new CaseInsensitiveMap<>( newServers );
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 79e7c905..4d96e797 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -47,7 +47,6 @@ import net.md_5.bungee.api.score.Score;
+ import net.md_5.bungee.api.score.Scoreboard;
+ import net.md_5.bungee.api.score.Team;
+ import net.md_5.bungee.chat.ComponentSerializer;
+-import net.md_5.bungee.mimc.Player;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
+ import net.md_5.bungee.protocol.DefinedPacket;
+@@ -145,14 +144,14 @@ public class DownstreamBridge extends PacketHandler
+         float yaw = packet.buf.readFloat();
+         float pitch = packet.buf.readFloat();
+         byte flags = packet.buf.readByte();
+-        bungee.getLogger().log( Level.WARNING, String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
+-        Player player = ((BungeeCord)bungee).partitionManager.getOrCreatePlayer(con.getUniqueId().toString());
+-        if (player != null) {
+-            // flags can modify the meaning of x, y, z from absolute to relative position
+-            player.x = (flags & 0x1) == 0x1 ? player.x + x : x;
+-            player.y = (flags & 0x2) == 0x2 ? player.y + y : y;
+-            player.z = (flags & 0x4) == 0x4 ? player.z + z : z;
+-        }
++        bungee.getLogger().info( String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++
++        ((BungeeCord)bungee).partitionManager.movePlayer(
++                con.getUniqueId()
++                , x, (flags & 0x1) == 0x1
++                , y, (flags & 0x2) == 0x2
++                , z, (flags & 0x4) == 0x4
++            );
+     }
+ 
+     @Override
+@@ -219,7 +218,7 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x33: packetName = "PacketPlayOutPlayerInfo"; break;
+             //case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
+             case 0x35:
+-                packetName = "PacketPlayOutPlayerPositionAndLook";
++                //packetName = "PacketPlayOutPlayerPositionAndLook";
+                 updatePlayerLocation(packet);
+                 break;
+             //case 0x36: packetName = "PacketPlayOutUnlockRecipes"; break;
+@@ -262,7 +261,7 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x5B: packetName = "PacketPlayOutTags"; break;
+         }
+         if (packetName != null) {
+-            bungee.getLogger().log( Level.WARNING, String.format("Event 0x%02X: %s", packetId, packetName) );
++            bungee.getLogger().info( String.format("Event 0x%02X: %s", packetId, packetName) );
+         }
+ 
+         packet.buf.readerIndex(readerIndex);
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java b/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
+index ebe6d559..738c8355 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
+@@ -41,6 +41,7 @@ import net.md_5.bungee.api.event.ServerConnectEvent;
+ import net.md_5.bungee.chat.ComponentSerializer;
+ import net.md_5.bungee.http.HttpClient;
+ import net.md_5.bungee.jni.cipher.BungeeCipher;
++import net.md_5.bungee.mimc.Player;
+ import net.md_5.bungee.mimc.PlayerLocation;
+ import net.md_5.bungee.mimc.nbt.NbtFile;
+ import net.md_5.bungee.mimc.nbt.NbtTree;
+@@ -541,13 +542,9 @@ public class InitialHandler extends PacketHandler implements PendingConnection
+                             if ( server == null )
+                             {
+                                 // MIMC Start
+-                                PlayerLocation lastPlayerLocation = PlayerLocation.load(bungee.config.getWorldFolder(), userCon.getUUID());
+-                                String serverName = bungee.partitionManager.getServerAtLocation(lastPlayerLocation);
+-                                // If the player has never connected, send him to the default server
+-                                if (serverName == null) {
+-                                    serverName = listener.getDefaultServer();
+-                                }
+-                                bungee.getLogger().log( Level.INFO, "MIMC forwarding " + userCon.getName() + " to " + serverName);
++                                Player player = bungee.partitionManager.addPlayer(userCon);
++                                String serverName = player.partition.getServerName();
++                                bungee.getLogger().log( Level.INFO, "MIMC | forwarding " + userCon.getName() + " to " + serverName);
+                                 server = bungee.getServerInfo( serverName );
+                                 // MIMC End
+                             }
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index ac839a9c..b379c8a9 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -22,7 +22,6 @@ import net.md_5.bungee.api.event.PluginMessageEvent;
+ import net.md_5.bungee.api.event.SettingsChangedEvent;
+ import net.md_5.bungee.api.event.TabCompleteEvent;
+ import net.md_5.bungee.forge.ForgeConstants;
+-import net.md_5.bungee.mimc.Player;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
+ import net.md_5.bungee.protocol.DefinedPacket;
+@@ -119,13 +118,8 @@ public class UpstreamBridge extends PacketHandler
+         double x = packet.buf.readDouble();
+         double y = packet.buf.readDouble();
+         double z = packet.buf.readDouble();
+-        bungee.getLogger().log( Level.WARNING, String.format("PacketPlayInPlayerPosition %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
+-        Player player = ((BungeeCord)bungee).partitionManager.getOrCreatePlayer(con.getUniqueId().toString());
+-        if (player != null) {
+-            player.x = x;
+-            player.y = y;
+-            player.z = z;
+-        }
++        //bungee.getLogger().info( String.format("PacketPlayInPlayerPosition %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++        ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z);
+     }
+ 
+     @Override
+@@ -158,11 +152,11 @@ public class UpstreamBridge extends PacketHandler
+                 //case 0x0F: packetName = "PacketPlayInKeepAlive"; break;
+                 //case 0x10: packetName = "PacketPlayInLockDifficulty"; break;
+                 case 0x11:
+-                    packetName = "PacketPlayInPlayerPosition";
++                    //packetName = "PacketPlayInPlayerPosition";
+                     updatePlayerLocation(packet);
+                     break;
+                 case 0x12:
+-                    packetName = "PacketPlayInPlayerPositionAndLook";
++                    //packetName = "PacketPlayInPlayerPositionAndLook";
+                     updatePlayerLocation(packet);
+                     break;
+                 //case 0x13: packetName = "PacketPlayInPlayerLook"; break;
+@@ -194,7 +188,7 @@ public class UpstreamBridge extends PacketHandler
+                 //case 0x2D: packetName = "PacketPlayInUseITem"; break;
+             }
+             if (packetName != null) {
+-                //bungee.getLogger().log( Level.WARNING, String.format("Event 0x%02X: %s", packetId, packetName) );
++                bungee.getLogger().log( Level.WARNING, String.format("Event 0x%02X: %s", packetId, packetName) );
+             }
+ 
+             packet.buf.readerIndex(readerIndex);
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+index ea2d10e1..f1ae3dfa 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+@@ -1,31 +1,49 @@
+ package net.md_5.bungee.mimc;
+ 
+-import java.util.HashMap;
++import net.md_5.bungee.api.config.ServerInfo;
++
++import java.util.ArrayList;
++import java.util.List;
+ import java.util.Map;
+ 
+ public class Partition {
++    public final long MERGE_RADIUS = 32 * 16;
++
+     private String serverName;
+-    private Map<String, PlayerLocation> locationMap = new HashMap<>();
++    private final List<Player> players = new ArrayList<>();
++    private final boolean isSpawnPartition;
++
++    public Partition(String serverName) { this(serverName, false); }
++    public Partition(String serverName, boolean isSpawnPartition) {
++        this.serverName = serverName;
++        this.isSpawnPartition = isSpawnPartition;
++    }
+ 
+-    public static Partition createFor(String serverName, String uuid, PlayerLocation playerLocation) {
+-        Partition partition = new Partition();
+-        partition.add(uuid, playerLocation);
+-        return partition;
++    public boolean isInMergeRadius(Player player) {
++        if (isSpawnPartition) {
++            if (player.location.distance(new PlayerLocation(Dimension.OVERWORLD, 0, 70, 0)) <= 1000) {
++                return true;
++            }
++        }
++        return players.stream().anyMatch(x -> x != player && x.location.distance(player.location) <= MERGE_RADIUS);
+     }
+ 
+-    public void add(String uuid, PlayerLocation playerLocation) {
+-        locationMap.put(uuid, playerLocation);
++    public String getServerName() {
++        return serverName;
+     }
+ 
+-    public boolean contains(PlayerLocation playerLocation) {
+-        return false;
++    public void add(Player player) {
++        this.players.add(player);
+     }
+ 
+-    public void migrate(String newServerName) {
+-        this.serverName = newServerName;
++    public void mergeInto(Partition other, Map<String, ServerInfo> servers) {
++        players.addAll(other.players);
++        for (Player p : other.players) {
++            p.userCon.connect(servers.get(serverName));
++        }
+     }
+ 
+-    public String getServerName() {
+-        return serverName;
++    public void migrate(Player p, Map<String, ServerInfo> servers) {
++        p.userCon.connect(servers.get(serverName));
+     }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index e3c70887..c66aa676 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -1,44 +1,169 @@
+ package net.md_5.bungee.mimc;
+ 
+-import java.util.ArrayList;
+-import java.util.List;
++import net.md_5.bungee.BungeeCord;
++import net.md_5.bungee.UserConnection;
++import net.md_5.bungee.api.config.ServerInfo;
++import net.md_5.bungee.api.connection.ProxiedPlayer;
++
++import java.util.*;
+ 
+ public class PartitionManager {
++    private final String SPAWN_SERVERNAME = "spawn";
++    private final BungeeCord bungeeCord;
++
++    private String worldFolder;
++    private Map<String, ServerInfo> servers = new HashMap<>();
+     private List<Partition> partitions = new ArrayList<>();
++    private List<Player> players = new ArrayList<>();
+ 
+-    public String getServerAtLocation(PlayerLocation playerLocation) {
+-        Partition partition = getPartitionAtLocation(playerLocation);
+-        if (partition == null) {
+-            return null;
++    public PartitionManager(BungeeCord bungeeCord) {
++        this.bungeeCord = bungeeCord;
++    }
++
++    public void initialize(String worldFolder, Map<String, ServerInfo> servers) throws IllegalArgumentException {
++        if (this.servers.size() > 0) {
++            return;
+         }
+-        return partition.getServerName();
++
++        this.worldFolder = worldFolder;
++        this.servers = servers;
++
++        ServerInfo spawnServer = servers.get(SPAWN_SERVERNAME);
++        if (spawnServer == null) {
++            throw new IllegalArgumentException("Expecting server to be defined with name 'spawn'.");
++        }
++
++        Partition spawnPartition = new Partition(SPAWN_SERVERNAME, true);
++        partitions.add(spawnPartition);
+     }
+ 
+-    public Partition getPartitionAtLocation(PlayerLocation playerLocation) {
+-        for (int i = 0; i <partitions.size(); i++) {
+-            Partition partition = partitions.get(i);
+-            if (partition.contains(playerLocation)) {
+-                return partition;
+-            }
++    public Player getPlayer(UUID uuid) {
++        for (int i = 0; i < players.size(); i++) {
++            Player p = players.get(i);
++            if (p.uniqueId == uuid) return p;
+         }
+         return null;
+     }
++    public Player movePlayer(UUID uuid, double x, double y, double z) {
++        return movePlayer(uuid, x, false, y, false, z, false);
++    }
++    public Player movePlayer(UUID uuid
++            , double x, boolean xIsRelative
++            , double y, boolean yIsRelative
++            , double z, boolean zIsRelative) {
++        Player player = getPlayer(uuid);
++        if (player != null) {
++            player.move(
++                    xIsRelative ? player.location.calculateOffsetFromX(x) : x
++                    , yIsRelative ? player.location.calculateOffsetFromY(y) : y
++                    , zIsRelative ? player.location.calculateOffsetFromZ(z) : z);
+ 
+-    private List<Player> players = new ArrayList<>();
+-    public Player getOrCreatePlayer(String uuid) {
+-        Player p = getPlayer(uuid);
+-        if (p == null) {
+-            p = new Player();
+-            p.uuid = uuid;
+-            players.add(p);
++            migratePlayer(player);
+         }
++        return player;
++    }
++
++    public Player addPlayer(UserConnection userCon) {
++        String name = userCon.getName();
++        UUID uniqueId = userCon.getUniqueId();
++
++        Player p = new Player(userCon, name, uniqueId);
++        PlayerLocation lastPlayerLocation = PlayerLocation.load(this.worldFolder, uniqueId.toString());
++        if (lastPlayerLocation != null) {
++            bungeeCord.getLogger().warning(String.format("MIMC | Player connected %s", p));
++            p.move(lastPlayerLocation);
++        } else {
++            bungeeCord.getLogger().warning(String.format("MIMC | New player connected %s", p));
++        }
++        Partition partition = allocateToPartition(p);
++        p.assignTo(partition);
++        players.add(p);
+         return p;
+     }
+-    public Player getPlayer(String uuid) {
+-        for (int i = 0; i < players.size(); i++) {
+-            Player p = players.get(i);
+-            if (p.uuid == uuid) return p;
++
++    public Partition allocateToPartition(Player p) {
++        Partition partition = null;
++
++        if (p.location != null) {
++            partition = migratePlayer(p);
+         }
+-        return null;
++        if (partition == null) {
++            // Default to spawn partition
++            return this.partitions.get(0);
++        }
++        return partition;
++    }
++
++    String suggestServerForNewPartition() {
++        Map<String, Long> serverPartitionCounts = new HashMap<>();
++
++        Iterator<Map.Entry<String, ServerInfo>> iterator = this.servers.entrySet().iterator();
++        while (iterator.hasNext()) {
++            String serverName = iterator.next().getKey();
++            Long count = this.partitions.stream().filter(x -> x.getServerName().equals(serverName)).count();
++            bungeeCord.getLogger().info(String.format("Server %s has %d partitions.", serverName, count));
++            serverPartitionCounts.put(serverName, count);
++        }
++
++        // Gets the server with the least amount of partitions running on it
++        // TODO: This should be much more intelligent, like least amount of players, or least amount of load (1.0/tps?)
++        String serverWithFewestPartitions = serverPartitionCounts.entrySet().stream()
++                .min(Comparator.comparing(Map.Entry::getValue))
++                .get().getKey();
++        bungeeCord.getLogger().info(String.format("Server with fewest partitions %s", serverWithFewestPartitions));
++        return serverWithFewestPartitions;
++    }
++    Partition migratePlayer(Player p) {
++        Partition previous = p.partition;
++        Partition target;
++
++        List<Partition> partitionsInRange = new ArrayList<>();
++        List<Partition> partitionsNotInRange = new ArrayList<>();
++
++        for (int i = 0; i<this.partitions.size(); i++) {
++            Partition candidate = this.partitions.get(i);
++
++            if (candidate.isInMergeRadius(p)) {
++                partitionsInRange.add(candidate);
++            } else {
++                partitionsNotInRange.add(candidate);
++            }
++        }
++
++        if (partitionsInRange.isEmpty()) {
++            // If it is a new player, and no other partition is in range, add a new partition
++            if (previous == null) {
++                String serverName = suggestServerForNewPartition();
++                target = new Partition(serverName);
++                bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to new partition on node %s", p.location, serverName));
++                this.partitions.add(target);
++            } else {
++                // The player moved, but didn't come in merge distance of another partition
++                target = previous;
++            }
++        } else if (partitionsInRange.size() > 1) {
++            target = partitionsInRange.get(0);
++            bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to existing partition on node %s", p.location, target.getServerName()));
++
++            bungeeCord.getLogger().warning(String.format("MIMC | Merging %d partitions that are in range", partitionsInRange.size()-1));
++            for (int i = 1; i < partitionsInRange.size(); i++) {
++                Partition partitionToBeMerged = partitionsInRange.get(i);
++                target.mergeInto(partitionToBeMerged, this.servers);
++            }
++            partitionsNotInRange.add(target);
++            this.partitions = partitionsNotInRange;
++        } else {
++            target = partitionsInRange.get(0);
++
++            if (previous == null) {
++                // The new player is in range of a partition. Add it to that partition.
++                bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to existing partition on node %s", p.location, target.getServerName()));
++            } else if (target != previous) {
++                // The player moved away from his previous partition, and is now in range of a new partition
++                bungeeCord.getLogger().warning(String.format("MIMC | Migrating player at %s to other partition on node %s", p.location, target.getServerName()));
++                target.migrate(p, this.servers);
++            }
++        }
++        return target;
+     }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+index 4aaa0792..f1792ac2 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+@@ -1,6 +1,40 @@
+ package net.md_5.bungee.mimc;
+ 
++import net.md_5.bungee.UserConnection;
++
++import java.util.UUID;
++
+ public class Player {
+-    public String uuid;
+-    public double x, y, z;
++    public final UserConnection userCon;
++    public final String name;
++    public final UUID uniqueId;
++    public PlayerLocation location;
++    public Partition partition;
++
++    public Player(UserConnection userCon, String name, UUID uniqueId) {
++        this.userCon = userCon;
++        this.name = name;
++        this.uniqueId = uniqueId;
++    }
++
++    public void assignTo(Partition partition) {
++        this.partition = partition;
++        partition.add(this);
++    }
++
++    public void move(PlayerLocation newLocation) {
++        this.location = newLocation;
++    }
++    public void move(double x, double y, double z) {
++        if (this.location == null) {
++            this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z);
++        } else {
++            this.location = this.location.move(x, y, z);
++        }
++    }
++
++    @Override
++    public String toString() {
++        return String.format("Player %s [UniqueId:%s]", name, uniqueId);
++    }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+index 935f1a72..8df411d8 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+@@ -8,10 +8,10 @@ import java.io.File;
+ import java.io.IOException;
+ 
+ public class PlayerLocation {
+-    private Dimension dimension;
+-    private double x;
+-    private double y;
+-    private double z;
++    public final Dimension dimension;
++    public final double x;
++    public final double y;
++    public final double z;
+ 
+     public PlayerLocation(Dimension dimension, double x, double y, double z) {
+         this.dimension = dimension;
+@@ -27,12 +27,12 @@ public class PlayerLocation {
+ 
+     public static PlayerLocation load(String worldFolder, String uuid) {
+         try {
+-            String playerdataFile = String.format("%s\\world\\playerdata\\%s.dat"
+-                    , worldFolder.replaceAll("\\+$", "")
++            String playerdataFile = String.format("%s/world/playerdata/%s.dat"
++                    , worldFolder.replaceAll("/+$", "")
+                     , uuid);
+             if (new File(playerdataFile).exists()) {
+                 NbtFile file = new NbtFile(playerdataFile);
+-                NbtTree tree = NbtTree.readFrom(file.getInputStream());
++                NbtTree tree = NbtTree.readFrom(file.getReader());
+                 return PlayerLocation.parse(tree);
+             }
+         } catch (IOException e) {
+@@ -61,4 +61,23 @@ public class PlayerLocation {
+         }
+         return null;
+     }
++
++    public PlayerLocation move(double x, double y, double z) {
++        return new PlayerLocation(this.dimension, x, y, z);
++    }
++    public double calculateOffsetFromX(double x) {
++        return this.x + x;
++    }
++    public double calculateOffsetFromY(double y) {
++        return this.y + y;
++    }
++    public double calculateOffsetFromZ(double z) {
++        return this.z + z;
++    }
++
++    public double distance(PlayerLocation other) {
++        double dx = x - other.x;
++        double dy = y - other.y;
++        return Math.sqrt(dx*dx+dy*dy);
++    }
+ }
+\ No newline at end of file
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java
+new file mode 100644
+index 00000000..feb44f95
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java
+@@ -0,0 +1,56 @@
++package net.md_5.bungee.mimc.nbt;
++
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
++import java.nio.charset.Charset;
++
++public class NbtByteReader {
++    private final ByteBuffer bb;
++
++    public NbtByteReader(byte[] bytes) {
++        this(bytes, ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN));
++    }
++    public NbtByteReader(byte[] bytes, boolean isLittleEndian) {
++        this.bb = ByteBuffer.wrap(bytes);
++        this.bb.order(isLittleEndian ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN);
++    }
++
++    public byte readByte() {
++        return this.bb.get();
++    }
++
++    public int read(byte[] bytes) {
++        this.bb.get(bytes);
++        return bytes.length;
++    }
++
++    public short readShort() {
++        return this.bb.getShort();
++    }
++
++    public int readInt() {
++        return this.bb.getInt();
++    }
++
++    public long readLong() {
++        return this.bb.getLong();
++    }
++
++    public float readFloat() {
++        return this.bb.getFloat();
++    }
++
++    public double readDouble() {
++        return this.bb.getDouble();
++    }
++
++    public String readString(int len, Charset charset) {
++        byte[] bytes = new byte[len];
++        this.bb.get(bytes);
++        return new String(bytes, charset);
++    }
++
++    public int available() {
++        return this.bb.remaining();
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java
+index 2e46ef49..22f359ae 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java
+@@ -12,14 +12,14 @@ public class NbtFile {
+         this.fileName = fileName;
+     }
+ 
+-    public DataInputStream getInputStream() {
++    public NbtByteReader getReader() {
+         try {
+             InputStream inputStream = new FileInputStream(this.fileName);
+             GZIPInputStream gzipInputStream = new GZIPInputStream(inputStream);
+             byte[] bytes = readBytes(gzipInputStream);
+             gzipInputStream.close();
+             inputStream.close();
+-            return new DataInputStream(new ByteArrayInputStream(bytes));
++            return new NbtByteReader(bytes, false);
+         } catch (Exception e) {
+             e.printStackTrace();
+             return null;
+@@ -39,7 +39,7 @@ public class NbtFile {
+     public static void main(String[] args) {
+         NbtFile file = new NbtFile("P:\\vanilla\\Paper\\work\\test-server\\world\\playerdata\\55e94550-f0b0-3d5e-a616-931da896dcde.dat");
+         try {
+-            NbtTree tree = NbtTree.readFrom(file.getInputStream());
++            NbtTree tree = NbtTree.readFrom(file.getReader());
+             PlayerLocation info = PlayerLocation.parse(tree);
+             System.out.println(info);
+         } catch (IOException e) {
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java
+index cf97584c..2f33f09e 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java
+@@ -1,6 +1,5 @@
+ package net.md_5.bungee.mimc.nbt;
+ 
+-import java.io.DataInputStream;
+ import java.io.IOException;
+ import java.nio.charset.StandardCharsets;
+ 
+@@ -13,17 +12,17 @@ public class NbtTree {
+         this.root = root;
+     }
+ 
+-    public static NbtTree readFrom(DataInputStream inputStream) throws IOException {
+-        TagType type = readTagType(inputStream);
++    public static NbtTree readFrom(NbtByteReader reader) throws IOException {
++        TagType type = readTagType(reader);
+         if (type == null || !type.equals(TagType.TAG_COMPOUND)) {
+             return null;
+         }
+-        String rootName = readString(inputStream).value;
+-        return new NbtTree(rootName, readCompound(inputStream));
++        String rootName = readString(reader).value;
++        return new NbtTree(rootName, readCompound(reader));
+     }
+ 
+-    static TagType readTagType(DataInputStream inputStream) throws IOException {
+-        byte b = inputStream.readByte();
++    static TagType readTagType(NbtByteReader reader) throws IOException {
++        byte b = reader.readByte();
+         TagType[] types = TagType.values();
+         for (int i = 0; i < types.length; i++) {
+             TagType type = types[i];
+@@ -31,145 +30,143 @@ public class NbtTree {
+         }
+         return null;
+     }
+-    static TagNodeCompound readCompound(DataInputStream inputStream) throws IOException {
++    static TagNodeCompound readCompound(NbtByteReader reader) throws IOException {
+         TagNodeCompound val = new TagNodeCompound();
+-        while (readTag(inputStream, val)) ;
++        while (readTag(reader, val)) ;
+         return val;
+     }
+-    static boolean readTag(DataInputStream inputStream, TagNodeCompound parent) throws IOException {
+-        TagType type = readTagType(inputStream);
++    static boolean readTag(NbtByteReader reader, TagNodeCompound parent) throws IOException {
++        TagType type = readTagType(reader);
+         if (type != TagType.TAG_END) {
+-            String name = readString(inputStream).value;
+-            parent.set(name, readValue(type, inputStream));
++            String name = readString(reader).value;
++            parent.set(name, readValue(type, reader));
+             return true;
+         }
+         return false;
+     }
+-    static TagNode readValue(TagType type, DataInputStream inputStream) throws IOException {
++    static TagNode readValue(TagType type, NbtByteReader reader) throws IOException {
+         switch (type) {
+             case TAG_END:
+                 return null;
+ 
+             case TAG_BYTE:
+-                return readByte(inputStream);
++                return readByte(reader);
+ 
+             case TAG_SHORT:
+-                return readShort(inputStream);
++                return readShort(reader);
+ 
+             case TAG_INT:
+-                return readInt(inputStream);
++                return readInt(reader);
+ 
+             case TAG_LONG:
+-                return readLong(inputStream);
++                return readLong(reader);
+ 
+             case TAG_FLOAT:
+-                return readFloat(inputStream);
++                return readFloat(reader);
+ 
+             case TAG_DOUBLE:
+-                return readDouble(inputStream);
++                return readDouble(reader);
+ 
+             case TAG_BYTE_ARRAY:
+-                return readByteArray(inputStream);
++                return readByteArray(reader);
+ 
+             case TAG_STRING:
+-                return readString(inputStream);
++                return readString(reader);
+ 
+             case TAG_LIST:
+-                return readList(inputStream);
++                return readList(reader);
+ 
+             case TAG_COMPOUND:
+-                return readCompound(inputStream);
++                return readCompound(reader);
+ 
+             case TAG_INT_ARRAY:
+-                return readIntArray(inputStream);
++                return readIntArray(reader);
+ 
+             case TAG_LONG_ARRAY:
+-                return readLongArray(inputStream);
++                return readLongArray(reader);
+ 
+             case TAG_SHORT_ARRAY:
+-                return readShortArray(inputStream);
++                return readShortArray(reader);
+         }
+ 
+         throw new IOException("Unknown tag type " + type);
+     }
+-    static TagNodeString readString(DataInputStream inputStream) throws IOException {
+-        short len = inputStream.readShort();
++    static TagNodeString readString(NbtByteReader reader) throws IOException {
++        short len = reader.readShort();
+         if (len < 0) {
+             throw new IOException("Negative length string");
+         }
+-        byte[] bytes = new byte[len];
+-        inputStream.read(bytes);
+-        return new TagNodeString(new String(bytes, StandardCharsets.UTF_8));
++        return new TagNodeString(reader.readString(len, StandardCharsets.UTF_8));
+     }
+-    static TagNodeByte readByte(DataInputStream inputStream) throws IOException {
+-        return new TagNodeByte(inputStream.readByte());
++    static TagNodeByte readByte(NbtByteReader reader) throws IOException {
++        return new TagNodeByte(reader.readByte());
+     }
+-    static TagNodeShort readShort(DataInputStream inputStream) throws IOException {
+-        return new TagNodeShort(inputStream.readShort());
++    static TagNodeShort readShort(NbtByteReader reader) throws IOException {
++        return new TagNodeShort(reader.readShort());
+     }
+-    static TagNodeInteger readInt(DataInputStream inputStream) throws IOException {
+-        return new TagNodeInteger(inputStream.readInt());
++    static TagNodeInteger readInt(NbtByteReader reader) throws IOException {
++        return new TagNodeInteger(reader.readInt());
+     }
+-    static TagNodeLong readLong(DataInputStream inputStream) throws IOException {
+-        return new TagNodeLong(inputStream.readLong());
++    static TagNodeLong readLong(NbtByteReader reader) throws IOException {
++        return new TagNodeLong(reader.readLong());
+     }
+-    static TagNodeFloat readFloat(DataInputStream inputStream) throws IOException {
+-        return new TagNodeFloat(inputStream.readFloat());
++    static TagNodeFloat readFloat(NbtByteReader reader) throws IOException {
++        return new TagNodeFloat(reader.readFloat());
+     }
+-    static TagNodeDouble readDouble(DataInputStream inputStream) throws IOException {
+-        return new TagNodeDouble(inputStream.readDouble());
++    static TagNodeDouble readDouble(NbtByteReader reader) throws IOException {
++        return new TagNodeDouble(reader.readDouble());
+     }
+-    static TagNodeByteArray readByteArray(DataInputStream inputStream) throws IOException {
+-        int len = inputStream.readInt();
++    static TagNodeByteArray readByteArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
+         if (len < 0) {
+             throw new IOException("Negative length string");
+         }
+         byte[] bytes = new byte[len];
+-        inputStream.read(bytes);
++        reader.read(bytes);
+         return new TagNodeByteArray(bytes);
+     }
+-    static TagNodeIntegerArray readIntArray(DataInputStream inputStream) throws IOException {
+-        int len = inputStream.readInt();
++    static TagNodeIntegerArray readIntArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
+         if (len < 0) {
+             throw new IOException("Negative length string");
+         }
+         int[] values = new int[len];
+         for (int i=0; i<len; i++) {
+-            values[i] = inputStream.readInt();
++            values[i] = reader.readInt();
+         }
+         return new TagNodeIntegerArray(values);
+     }
+-    static TagNodeShortArray readShortArray(DataInputStream inputStream) throws IOException {
+-        int len = inputStream.readInt();
++    static TagNodeShortArray readShortArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
+         if (len < 0) {
+             throw new IOException("Negative length string");
+         }
+         short[] values = new short[len];
+         for (int i=0; i<len; i++) {
+-            values[i] = inputStream.readShort();
++            values[i] = reader.readShort();
+         }
+         return new TagNodeShortArray(values);
+     }
+-    static TagNodeLongArray readLongArray(DataInputStream inputStream) throws IOException {
+-        int len = inputStream.readInt();
++    static TagNodeLongArray readLongArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
+         if (len < 0) {
+             throw new IOException("Negative length string");
+         }
+         long[] values = new long[len];
+         for (int i=0; i<len; i++) {
+-            values[i] = inputStream.readLong();
++            values[i] = reader.readLong();
+         }
+         return new TagNodeLongArray(values);
+     }
+-    static TagNodeList readList(DataInputStream inputStream) throws IOException {
+-        TagType type = readTagType(inputStream);
++    static TagNodeList readList(NbtByteReader reader) throws IOException {
++        TagType type = readTagType(reader);
++        int len = reader.readInt();
+         if (type == TagType.TAG_END) {
+             return new TagNodeList(TagType.TAG_BYTE);
+         }
+         TagNodeList list = new TagNodeList(type);
+-        int len = inputStream.readInt();
+         for (int i=0;i<len;i++) {
+-            list.nodes.add(readValue(type, inputStream));
++            list.nodes.add(readValue(type, reader));
+         }
+         return list;
+     }
