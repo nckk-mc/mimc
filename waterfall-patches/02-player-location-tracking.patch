@@ -1,0 +1,266 @@
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 9b8e6170..79e7c905 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -138,28 +138,6 @@ public class DownstreamBridge extends PacketHandler
+         return !server.isObsolete();
+     }
+ 
+-    private void joinGame(PacketWrapper packet) {
+-        int entityId  = DefinedPacket.readVarInt( packet.buf );
+-        //((BungeeCord)bungee).partitionManager.joinGame(entityId, con.getUniqueId().toString());
+-        bungee.getLogger().log( Level.WARNING, String.format("JoinGame EntityId: %d UUID: %s", entityId, con.getUniqueId().toString()) );
+-    }
+-
+-    private void updatePlayerRelativeLocation(PacketWrapper packet) {
+-        double x = packet.buf.readDouble();
+-        double y = packet.buf.readDouble();
+-        double z = packet.buf.readDouble();
+-        float yaw = packet.buf.readFloat();
+-        float pitch = packet.buf.readFloat();
+-        byte flags = packet.buf.readByte();
+-        bungee.getLogger().log( Level.WARNING, String.format("PlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
+-        Player player = ((BungeeCord)bungee).partitionManager.getOrCreatePlayer(con.getUniqueId().toString());
+-        if (player != null) {
+-            // flags can modify the meaning of x, y, z from absolute to relative position
+-            player.x = (flags & 0x1) == 0x1 ? player.x + x : x;
+-            player.y = (flags & 0x2) == 0x2 ? player.y + y : y;
+-            player.z = (flags & 0x4) == 0x4 ? player.z + z : z;
+-        }
+-    }
+     private void updatePlayerLocation(PacketWrapper packet) {
+         double x = packet.buf.readDouble();
+         double y = packet.buf.readDouble();
+@@ -167,7 +145,7 @@ public class DownstreamBridge extends PacketHandler
+         float yaw = packet.buf.readFloat();
+         float pitch = packet.buf.readFloat();
+         byte flags = packet.buf.readByte();
+-        bungee.getLogger().log( Level.WARNING, String.format("PlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++        bungee.getLogger().log( Level.WARNING, String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
+         Player player = ((BungeeCord)bungee).partitionManager.getOrCreatePlayer(con.getUniqueId().toString());
+         if (player != null) {
+             // flags can modify the meaning of x, y, z from absolute to relative position
+@@ -187,12 +165,12 @@ public class DownstreamBridge extends PacketHandler
+         // https://wiki.vg/Pre-release_protocol for current packetids
+         String packetName = null;
+         switch (packetId) {
+-            case 0x00: packetName = "PacketPlayOutSpawnEntity"; break;
+-            case 0x01: packetName = "PacketPlayOutSpawnEntityExperienceOrb"; break;
+-            case 0x02: packetName = "PacketPlayOutSpawnGlobalEntity"; break;
+-            case 0x03: packetName = "PacketPlayOutSpawnEntityLiving"; break;
+-            case 0x04: packetName = "PacketPlayOutSpawnEntityPainting"; break;
+-            case 0x05: packetName = "PacketPlayOutNamedEntitySpawn"; break;
++            //case 0x00: packetName = "PacketPlayOutSpawnEntity"; break;
++            //case 0x01: packetName = "PacketPlayOutSpawnEntityExperienceOrb"; break;
++            //case 0x02: packetName = "PacketPlayOutSpawnGlobalEntity"; break;
++            //case 0x03: packetName = "PacketPlayOutSpawnEntityLiving"; break;
++            //case 0x04: packetName = "PacketPlayOutSpawnEntityPainting"; break;
++            //case 0x05: packetName = "PacketPlayOutNamedEntitySpawn"; break;
+             //case 0x06: packetName = "PacketPlayOutAnimation"; break;
+             //case 0x07: packetName = "PacketPlayOutStatistics"; break;
+             //case 0x08: packetName = "PacketPlayOutBlockBreakAnimation"; break;
+@@ -214,7 +192,7 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x18: packetName = "PacketPlayOutPluginMessage"; break;
+             //case 0x19: packetName = "PacketPlayOutNamedSoundEffect"; break;
+             case 0x1A: packetName = "PacketPlayOutDisconnect"; break;
+-            case 0x1B: packetName = "PacketPlayOutEntityStatus"; break;
++            //case 0x1B: packetName = "PacketPlayOutEntityStatus"; break;
+             //case 0x1C: packetName = "PacketPlayOutExplosion"; break;
+             //case 0x1D: packetName = "PacketPlayOutUnloadChunk"; break;
+             //case 0x1E: packetName = "PacketPlayOutChangeGameState"; break;
+@@ -224,24 +202,21 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x22: packetName = "PacketPlayOutEffect"; break;
+             //case 0x23: packetName = "PacketPlayOutParticle"; break;
+             //case 0x24: packetName = "PacketPlayOutUpdateLight"; break;
+-            case 0x25:
+-                packetName = "PacketPlayOutJoinGame";
+-                joinGame(packet);
+-                break;
++            //case 0x25: packetName = "PacketPlayOutJoinGame"; break;
+             //case 0x26: packetName = "PacketPlayOutMapData"; break;
+             //case 0x27: packetName = "PacketPlayOutTradeList"; break;
+-            case 0x28: packetName = "PacketPlayOutRelEntityMove"; break;
+-            case 0x29: packetName = "PacketPlayOutRelEntityMoveLook"; break;
+-            case 0x2A: packetName = "PacketPlayOutEntityLook"; break;
+-            case 0x2B: packetName = "PacketPlayOutEntity"; break;
+-            case 0x2C: packetName = "PacketPlayOutVehicleMove"; break;
++            //case 0x28: packetName = "PacketPlayOutRelEntityMove"; break;
++            //case 0x29: packetName = "PacketPlayOutRelEntityMoveLook"; break;
++            //case 0x2A: packetName = "PacketPlayOutEntityLook"; break;
++            //case 0x2B: packetName = "PacketPlayOutEntity"; break;
++            //case 0x2C: packetName = "PacketPlayOutVehicleMove"; break;
+             //case 0x2D: packetName = "PacketPlayOutOpenBook"; break;
+             //case 0x2E: packetName = "PacketPlayOutOpenWindow"; break;
+             //case 0x2F: packetName = "PacketPlayOutOpenSignEditor"; break;
+             //case 0x30: packetName = "PacketPlayOutCraftRecipeResponse"; break;
+             //case 0x31: packetName = "PacketPlayOutPlayerAbilities"; break;
+             //case 0x32: packetName = "PacketPlayOutCombatEvent"; break;
+-            case 0x33: packetName = "PacketPlayOutPlayerInfo"; break;
++            //case 0x33: packetName = "PacketPlayOutPlayerInfo"; break;
+             //case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
+             case 0x35:
+                 packetName = "PacketPlayOutPlayerPositionAndLook";
+@@ -270,7 +245,7 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x4A: packetName = "PacketPlayOutMount"; break;
+             //case 0x4B: packetName = "PacketPlayOutTeams"; break;
+             //case 0x4C: packetName = "PacketPlayOutUpdateScore"; break;
+-            case 0x4D: packetName = "PacketPlayOutSpawnPosition"; break;
++            //case 0x4D: packetName = "PacketPlayOutSpawnPosition"; break;
+             //case 0x4E: packetName = "PacketPlayOutTimeUpdate"; break;
+             //case 0x4F: packetName = "PacketPlayOutTitle"; break;
+             //case 0x50: packetName = "PacketPlayOutEntitySound"; break;
+@@ -279,7 +254,7 @@ public class DownstreamBridge extends PacketHandler
+             //case 0x53: packetName = "PacketPlayOutPlayerListHeaderAndFooter"; break;
+             //case 0x54: packetName = "PacketPlayOutNbtQueryResponse"; break;
+             //case 0x55: packetName = "PacketPlayOutCollect"; break;
+-            case 0x56: packetName = "PacketPlayOutEntityTeleport"; break;
++            //case 0x56: packetName = "PacketPlayOutEntityTeleport"; break;
+             //case 0x57: packetName = "PacketPlayOutAdvancement"; break;
+             //case 0x58: packetName = "PacketPlayOutUpdateAttributes"; break;
+             //case 0x59: packetName = "PacketPlayOutEntityEffect"; break;
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index 51d0c6cf..ac839a9c 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -9,6 +9,8 @@ import io.netty.channel.Channel;
+ import java.util.ArrayList;
+ import java.util.LinkedList;
+ import java.util.List;
++import java.util.logging.Level;
++
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+ import net.md_5.bungee.Util;
+@@ -20,8 +22,10 @@ import net.md_5.bungee.api.event.PluginMessageEvent;
+ import net.md_5.bungee.api.event.SettingsChangedEvent;
+ import net.md_5.bungee.api.event.TabCompleteEvent;
+ import net.md_5.bungee.forge.ForgeConstants;
++import net.md_5.bungee.mimc.Player;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
++import net.md_5.bungee.protocol.DefinedPacket;
+ import net.md_5.bungee.protocol.PacketWrapper;
+ import net.md_5.bungee.protocol.ProtocolConstants;
+ import net.md_5.bungee.protocol.packet.Chat;
+@@ -111,12 +115,90 @@ public class UpstreamBridge extends PacketHandler
+         return con.getServer() != null || packet.packet instanceof PluginMessage;
+     }
+ 
++    private void updatePlayerLocation(PacketWrapper packet) {
++        double x = packet.buf.readDouble();
++        double y = packet.buf.readDouble();
++        double z = packet.buf.readDouble();
++        bungee.getLogger().log( Level.WARNING, String.format("PacketPlayInPlayerPosition %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++        Player player = ((BungeeCord)bungee).partitionManager.getOrCreatePlayer(con.getUniqueId().toString());
++        if (player != null) {
++            player.x = x;
++            player.y = y;
++            player.z = z;
++        }
++    }
++
+     @Override
+     public void handle(PacketWrapper packet) throws Exception
+     {
+         if ( con.getServer() != null )
+         {
+             con.getEntityRewrite().rewriteServerbound( packet.buf, con.getClientEntityId(), con.getServerEntityId(), con.getPendingConnection().getVersion() );
++
++            int readerIndex = packet.buf.readerIndex();
++            int packetId = DefinedPacket.readVarInt( packet.buf );
++            // https://wiki.vg/Pre-release_protocol for current packetids
++            String packetName = null;
++            switch (packetId) {
++                //case 0x00: packetName = "PacketPlayInTelportConfirm"; break;
++                //case 0x01: packetName = "PacketPlayInQueryBlockNbt"; break;
++                //case 0x02: packetName = "PacketPlayInSetDifficulty"; break;
++                //case 0x03: packetName = "PacketPlayInChatMessage"; break;
++                //case 0x04: packetName = "PacketPlayInClientStatus"; break;
++                //case 0x05: packetName = "PacketPlayInClientSettings"; break;
++                //case 0x06: packetName = "PacketPlayInTabComplete"; break;
++                //case 0x07: packetName = "PacketPlayInConfirmTransaction"; break;
++                //case 0x08: packetName = "PacketPlayInClickWindowButton"; break;
++                //case 0x09: packetName = "PacketPlayInClickWindow"; break;
++                //case 0x0A: packetName = "PacketPlayInCloseWindow"; break;
++                //case 0x0B: packetName = "PacketPlayInPluginMessage"; break;
++                //case 0x0C: packetName = "PacketPlayInEditBook"; break;
++                //case 0x0D: packetName = "PacketPlayInQueryEntityNbt"; break;
++                //case 0x0E: packetName = "PacketPlayInUseEntity"; break;
++                //case 0x0F: packetName = "PacketPlayInKeepAlive"; break;
++                //case 0x10: packetName = "PacketPlayInLockDifficulty"; break;
++                case 0x11:
++                    packetName = "PacketPlayInPlayerPosition";
++                    updatePlayerLocation(packet);
++                    break;
++                case 0x12:
++                    packetName = "PacketPlayInPlayerPositionAndLook";
++                    updatePlayerLocation(packet);
++                    break;
++                //case 0x13: packetName = "PacketPlayInPlayerLook"; break;
++                //case 0x14: packetName = "PacketPlayInPlayer"; break;
++                //case 0x15: packetName = "PacketPlayInVehicleMove"; break;
++                //case 0x16: packetName = "PacketPlayInSteerBoat"; break;
++                //case 0x17: packetName = "PacketPlayInPickItem"; break;
++                //case 0x18: packetName = "PacketPlayInCraftRecipeRequest"; break;
++                //case 0x19: packetName = "PacketPlayInPlayerAbilities"; break;
++                //case 0x1A: packetName = "PacketPlayInPlayerDigging"; break;
++                //case 0x1B: packetName = "PacketPlayInEntityAction"; break;
++                //case 0x1C: packetName = "PacketPlayInSteerVehicle"; break;
++                //case 0x1D: packetName = "PacketPlayInRecipeBookDelta"; break;
++                //case 0x1E: packetName = "PacketPlayInNameItem"; break;
++                //case 0x1F: packetName = "PacketPlayInResourcePackStatus"; break;
++                //case 0x20: packetName = "PacketPlayInAdvancementTab"; break;
++                //case 0x21: packetName = "PacketPlayInSelectTrade"; break;
++                //case 0x22: packetName = "PacketPlayInSetBeaconEffect"; break;
++                //case 0x23: packetName = "PacketPlayInHeldItemChange"; break;
++                //case 0x24: packetName = "PacketPlayInUpdateCommandBlock"; break;
++                //case 0x25: packetName = "PacketPlayInUpdateCommandBlockMinecart"; break;
++                //case 0x26: packetName = "PacketPlayInCreativeInventoryAction"; break;
++                //case 0x27: packetName = "PacketPlayInUpdateJigsawBlock"; break;
++                //case 0x28: packetName = "PacketPlayInUpdateStructureBlock"; break;
++                //case 0x29: packetName = "PacketPlayInUpdateSign"; break;
++                //case 0x2A: packetName = "PacketPlayInAnimation"; break;
++                //case 0x2B: packetName = "PacketPlayInSpecatate"; break;
++                //case 0x2C: packetName = "PacketPlayInPlayerBlockPlacement"; break;
++                //case 0x2D: packetName = "PacketPlayInUseITem"; break;
++            }
++            if (packetName != null) {
++                //bungee.getLogger().log( Level.WARNING, String.format("Event 0x%02X: %s", packetId, packetName) );
++            }
++
++            packet.buf.readerIndex(readerIndex);
++
+             con.getServer().getCh().write( packet );
+         }
+     }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 98698c1d..e3c70887 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -34,14 +34,6 @@ public class PartitionManager {
+         }
+         return p;
+     }
+-
+-    public Player getPlayer(int entityId) {
+-        for (int i = 0; i < players.size(); i++) {
+-            Player p = players.get(i);
+-            if (p.entityId == entityId) return p;
+-        }
+-        return null;
+-    }
+     public Player getPlayer(String uuid) {
+         for (int i = 0; i < players.size(); i++) {
+             Player p = players.get(i);
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+index 85302865..4aaa0792 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+@@ -1,7 +1,6 @@
+ package net.md_5.bungee.mimc;
+ 
+ public class Player {
+-    public int entityId;
+     public String uuid;
+     public double x, y, z;
+ }

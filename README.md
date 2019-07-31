@@ -42,6 +42,7 @@
 	git clone https://github.com/PaperMC/Waterfall.git
 	cd waterfall/Waterfall-Proxy
 	git apply waterfall-patches/01-first-steps.patch
+	git apply waterfall-patches/02-player-location-tracking.patch
 	cd ../
 		
 	# 8. Build
