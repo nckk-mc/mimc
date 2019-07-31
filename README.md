@@ -1,6 +1,7 @@
     # 1. Build PaperMC
     git clone https://github.com/PaperMC/Paper.git
     cd Paper
+	git checkout ver/1.14
     ./paper build
     
 	# 2. Run a testserver so the appropriate folders are created
