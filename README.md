@@ -46,14 +46,15 @@
 	# 7. Clone waterfall and apply patches
     cd ../../..
 	git clone https://github.com/PaperMC/Waterfall.git
+	./waterfall build
 	cd waterfall/Waterfall-Proxy
-	for patch in waterfall-patches/*.patch; do
+	for patch in ../../waterfall-patches/*.patch; do
 		git apply $patch
 	done
 	cd ../
 		
 	# 8. Build
-	./waterfall build
+	mvn
 		
 	# 9. Set up testserver
 	mkdir work/
