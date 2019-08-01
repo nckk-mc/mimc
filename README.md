@@ -2,7 +2,7 @@
     git clone https://github.com/PaperMC/Paper.git
     cd Paper
 	git checkout ver/1.14
-    ./paper build
+    ./paper jar
     
 	# 2. Run a testserver so the appropriate folders are created
 	./paper t
@@ -69,5 +69,15 @@
 	sed -i 's/online_mode: true/world_folder: ..\/..\/Paper\/work\/test-server\/\nonline_mode: true/g' config.yml
 	sed -i 's/ip_forward: false/ip_forward: true/g' config.yml
 	
-
-	
+	# 11. Current test setup
+	# - Start up waterfall
+	# - Start up spawn node @ port 25565
+	# - Connect first player and teleport to 0,0
+	# - Connect second player and teleport to 2000,0
+	# - Shut down both servers
+	# - Restart waterfall
+	# - Start spawn node @ port 25565 and s1 node @ port 25566
+	# - Reconnect your first player (He should be redirected to the spawn node)
+	# - Reconnect your second player (He should be redirect to the s1 node)
+	# - And now for the magic: teleport the second player to 10,0
+	# - You should see bungeecord redirect him to the spawn node
