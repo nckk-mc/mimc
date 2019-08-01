@@ -28,7 +28,9 @@
 	
 	# 4. Apply patches
 	cd ../../Paper-Server
-	git apply paper-patches/01-first-steps.patch
+	for patch in paper-patches/*.patch; do
+		git apply $patch
+	done
 
 	# Back to the Paper root
     cd ../
@@ -45,8 +47,9 @@
     cd ../../..
 	git clone https://github.com/PaperMC/Waterfall.git
 	cd waterfall/Waterfall-Proxy
-	git apply waterfall-patches/01-first-steps.patch
-	git apply waterfall-patches/02-player-location-tracking.patch
+	for patch in waterfall-patches/*.patch; do
+		git apply $patch
+	done
 	cd ../
 		
 	# 8. Build
