@@ -40,8 +40,8 @@
 	
 	# 6. Run two instances
 	cd work/test-server
-	java -jar paper-1.14.4.jar -p 25565
-	java -jar paper-1.14.4.jar -p 25566
+	java -jar ../../Paper-Server/target/paper-1.14.4.jar -p 25565
+	java -jar ../../Paper-Server/target/paper-1.14.4.jar -p 25566
 	
 	# 7. Clone waterfall and apply patches
     cd ../../..
