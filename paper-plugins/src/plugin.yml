@@ -1,0 +1,5 @@
+name: MigratePlugin
+version: 0.1
+author: nckk-mc
+main: mimc.MigratePlugin
+api-version: 1.14
