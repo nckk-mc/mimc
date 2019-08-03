@@ -21,8 +21,8 @@ echo ""
 
 echo "MIMC | Running test server. Type stop after it has succesfully started..."
 echo ""
-mkdir work/
-mkdir work/test-server/
+mkdir -p work/test-server/plugins
+cp ../paper-plugins/mimc.migrate.jar work/test-server/plugins/
 echo "eula=true" > work/test-server/eula.txt
 ./paper t 
 
