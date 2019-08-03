@@ -49,7 +49,7 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
 
                 getLogger().warning(String.format( "Migration preparation succeeded for player %s", playerName ));
 
-                player.sendPluginMessage(getPlugin(MigratePlugin.class), CHANNEL_NAME, out.toByteArray());
+                player.sendPluginMessage(this, CHANNEL_NAME, out.toByteArray());
             } else {
                 ByteArrayDataOutput out = ByteStreams.newDataOutput();
                 out.writeUTF("migration-preparation-failed");
@@ -58,7 +58,7 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
 
                 getLogger().warning(String.format( "Migration preparation failed for player %s", playerName ));
 
-                player.sendPluginMessage(getPlugin(MigratePlugin.class), CHANNEL_NAME, out.toByteArray());
+                player.sendPluginMessage(this, CHANNEL_NAME, out.toByteArray());
             }
         }
     }
