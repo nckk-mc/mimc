@@ -1,85 +1,5 @@
-diff --git a/src/main/java/mimc/MigratePlugin.java b/src/main/java/mimc/MigratePlugin.java
-new file mode 100644
-index 00000000..41af945e
---- /dev/null
-+++ b/src/main/java/mimc/MigratePlugin.java
-@@ -0,0 +1,74 @@
-+package mimc;
-+
-+import com.google.common.io.ByteArrayDataInput;
-+import com.google.common.io.ByteStreams;
-+import org.bukkit.entity.Player;
-+import org.bukkit.plugin.java.JavaPlugin;
-+import org.bukkit.plugin.messaging.PluginMessageListener;
-+
-+import java.io.ByteArrayInputStream;
-+import java.io.DataInputStream;
-+import java.io.IOException;
-+
-+import static net.minecraft.server.MinecraftServer.LOGGER;
-+
-+public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
-+    void checkIfBungee() {
-+        // we check if the server is Spigot/Paper (because of the spigot.yml file)
-+        if ( !getServer().getVersion().contains( "Spigot" ) || !getServer().getVersion().contains( "Paper" ) )
-+        {
-+            LOGGER.error( "You probably run CraftBukkit... Please update atleast to spigot for this to work..." );
-+            LOGGER.error( "Plugin disabled!" );
-+            getServer().getPluginManager().disablePlugin( this );
-+            return;
-+        }
-+        if ( getServer().spigot().getConfig().getBoolean( "settings.bungeecord" ) )
-+        {
-+            LOGGER.error( "This server is not BungeeCord." );
-+            LOGGER.error( "If the server is already hooked to BungeeCord, please enable it into your spigot.yml aswell." );
-+            LOGGER.error( "Plugin disabled!" );
-+            getServer().getPluginManager().disablePlugin( this );
-+        }
-+    }
-+
-+    @Override
-+    public void onEnable() {
-+        checkIfBungee();
-+        this.getServer().getMessenger().registerIncomingPluginChannel(this, "mimc", this);
-+        LOGGER.warn("MIMC | MigratePlugin enabled successfully.");
-+    }
-+
-+    @Override
-+    public void onDisable() {
-+        LOGGER.warn("MIMC | MigratePlugin was disabled!");
-+    }
-+
-+    @Override
-+    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-+        if (!channel.equalsIgnoreCase("mimc")) {
-+            return;
-+        }
-+
-+        LOGGER.warn(String.format( "MIMC | Got a message over the MIMC channel" ));
-+
-+        ByteArrayDataInput in = ByteStreams.newDataInput(message);
-+        String subchannel = in.readUTF();
-+
-+        try {
-+            if (subchannel.equalsIgnoreCase("Migrate")) {
-+                short len = in.readShort();
-+                byte[] msgbytes = new byte[len];
-+                in.readFully(msgbytes);
-+
-+                DataInputStream msgin = new DataInputStream(new ByteArrayInputStream(msgbytes));
-+
-+                String serverName = msgin.readUTF();
-+                String playerName = msgin.readUTF();
-+
-+                LOGGER.warn(String.format( "MIMC | Migration request received for player %s to node %s", playerName, serverName ));
-+            }
-+        } catch (IOException e) {
-+            e.printStackTrace();
-+        }
-+    }
-+}
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 3dbe83c7..02ca1552 100644
+index 3dbe83c7..17f35656 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
 @@ -16,6 +16,7 @@ import io.netty.buffer.ByteBufOutputStream;
@@ -98,44 +18,46 @@ index 3dbe83c7..02ca1552 100644
  import joptsimple.OptionSet;
  import joptsimple.OptionSpec;
  import org.apache.commons.lang3.Validate;
-@@ -660,6 +662,8 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
-     public abstract boolean k();
- 
-     public boolean saveChunks(boolean flag, boolean flag1, boolean flag2) {
-+        LOGGER.warn("MIMC | Running MinecraftServer::saveChunks()");
-+
-         boolean flag3 = false;
- 
-         for (Iterator iterator = this.getWorlds().iterator(); iterator.hasNext(); flag3 = true) {
-@@ -681,6 +685,14 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+@@ -681,10 +683,26 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
          worldserver1.getWorldBorder().a(worlddata);
          worlddata.c(this.getBossBattleCustomData().c());
          worldserver1.getDataManager().saveWorldData(worlddata, this.getPlayerList().r());
 +
-+        // MIMC Start
-+        if (flag2) {
-+            worldserver.isMigrating = true;
-+            MinecraftServer.LOGGER.warn("MIMC | isMigrating set to true");
-+        }
-+        // MIMC End
-+
          } // CraftBukkit - moved down
          return flag3;
      }
+ 
++    public boolean preparePlayerForMigration(String playerName) {
++        LOGGER.warn("MIMC | Running MinecraftServer::preparePlayerForMigration()");
++
++        getPlayerList().savePlayers();
++        saveChunks(true, true, true);
++
++        Iterator iterator = this.getWorlds().iterator();
++        while(iterator.hasNext()) {
++            WorldServer worldserver = (WorldServer) iterator.next();
++            worldserver.isMigrating = true;
++        }
++
++        return true;
++    }
++
+     @Override
+     public void close() {
+         this.stop();
 diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
-index 86831c35..ce58ffc0 100644
+index 86831c35..6ffefcb3 100644
 --- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
 +++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
-@@ -1150,6 +1150,18 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+@@ -1150,6 +1150,17 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
          });
      }
  
 +    // MIMC start
 +    @Override
 +    public void write(ChunkCoordIntPair chunkcoordintpair, NBTTagCompound nbttagcompound) throws IOException {
-+//        LOGGER.info("MIMC | Running PlayerChunkMap::write()");
 +        if (this.world.isMigrating) {
-+            LOGGER.info("MIMC | isMigrating so skipping PlayerChunkMap::write()");
++            //LOGGER.info("MIMC | isMigrating so skipping PlayerChunkMap::write()");
 +            return;
 +        }
 +        super.write(chunkcoordintpair, nbttagcompound);
@@ -161,7 +83,7 @@ index a0b64480..15daa530 100644
      }
  
 diff --git a/src/main/java/net/minecraft/server/WorldNBTStorage.java b/src/main/java/net/minecraft/server/WorldNBTStorage.java
-index 551376ff..99e503a7 100644
+index 551376ff..53f54f3d 100644
 --- a/src/main/java/net/minecraft/server/WorldNBTStorage.java
 +++ b/src/main/java/net/minecraft/server/WorldNBTStorage.java
 @@ -98,6 +98,8 @@ public class WorldNBTStorage implements IPlayerFileData {
@@ -179,7 +101,7 @@ index 551376ff..99e503a7 100644
          try {
 +            // MIMC start
 +            if (worlddata.world != null && worlddata.world.isMigrating) {
-+                LOGGER.info("MIMC | isMigrating so skipping WorldNBTStorage::saveWorldData()");
++                //LOGGER.info("MIMC | isMigrating so skipping WorldNBTStorage::saveWorldData()");
 +                return;
 +            }
 +            // MIMC end
@@ -226,3 +148,37 @@ index 135ec94c..98427c9d 100644
      // CraftBukkit start
      private int tickPosition;
      boolean hasPhysicsEvent = true; // Paper
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 5884d92f..a67886f4 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -41,6 +41,8 @@ import java.util.function.Consumer;
+ import java.util.logging.Level;
+ import java.util.logging.Logger;
+ import javax.imageio.ImageIO;
++
++import mimc.MimcServer;
+ import net.minecraft.server.Advancement;
+ import net.minecraft.server.ArgumentEntity;
+ import net.minecraft.server.Block;
+@@ -199,7 +201,7 @@ import net.md_5.bungee.api.chat.BaseComponent; // Spigot
+ import javax.annotation.Nullable; // Paper
+ import javax.annotation.Nonnull; // Paper
+ 
+-public final class CraftServer implements Server {
++public final class CraftServer implements MimcServer {
+     private final String serverName = "Paper"; // Paper
+     private final String serverVersion;
+     private final String bukkitVersion = Versioning.getBukkitVersion();
+@@ -2147,4 +2149,11 @@ public final class CraftServer implements Server {
+         return new com.destroystokyo.paper.profile.CraftPlayerProfile(uuid, name);
+     }
+     // Paper end
++
++    // MIMC start
++    @Override
++    public boolean preparePlayerForMigration(String playerName) {
++        return this.console.preparePlayerForMigration(playerName);
++    }
++    // MIMC end
+ }

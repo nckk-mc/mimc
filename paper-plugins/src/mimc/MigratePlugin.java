@@ -1,49 +1,28 @@
 package mimc;
 
 import com.google.common.io.ByteArrayDataInput;
+import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
-
 public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
-    void checkIfBungee() {
-        // we check if the server is Spigot/Paper (because of the spigot.yml file)
-        if ( !getServer().getVersion().contains( "Spigot" ) || !getServer().getVersion().contains( "Paper" ) )
-        {
-            getLogger().severe( "You probably run CraftBukkit... Please update atleast to spigot for this to work..." );
-            getLogger().severe( "Plugin disabled!" );
-            getServer().getPluginManager().disablePlugin( this );
-            return;
-        }
-        if ( getServer().spigot().getConfig().getBoolean( "settings.bungeecord" ) )
-        {
-            getLogger().severe( "This server is not BungeeCord." );
-            getLogger().severe( "If the server is already hooked to BungeeCord, please enable it into your spigot.yml aswell." );
-            getLogger().severe( "Plugin disabled!" );
-            getServer().getPluginManager().disablePlugin( this );
-        }
-    }
-
     @Override
     public void onEnable() {
-        checkIfBungee();
-        this.getServer().getMessenger().registerIncomingPluginChannel(this, "mimc", this);
-        getLogger().warning("MIMC | MigratePlugin enabled successfully.");
+        this.getServer().getMessenger().registerIncomingPluginChannel(this, "mimc:channel", this);
+        this.getServer().getMessenger().registerOutgoingPluginChannel(this, "mimc:channel");
+        getLogger().warning("Plugin was enabled.");
     }
 
     @Override
     public void onDisable() {
-        getLogger().warning("MIMC | MigratePlugin was disabled!");
+        getLogger().warning("Plugin was disabled!");
     }
 
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        if (!channel.equalsIgnoreCase("mimc")) {
+        if (!channel.equalsIgnoreCase("mimc:channel")) {
             return;
         }
 
@@ -52,21 +31,33 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
         ByteArrayDataInput in = ByteStreams.newDataInput(message);
         String subchannel = in.readUTF();
 
-        try {
-            if (subchannel.equalsIgnoreCase("Migrate")) {
-                short len = in.readShort();
-                byte[] msgbytes = new byte[len];
-                in.readFully(msgbytes);
+        if (subchannel.equalsIgnoreCase("prepare-migration")) {
+            MimcServer server = (MimcServer)getServer();
 
-                DataInputStream msgin = new DataInputStream(new ByteArrayInputStream(msgbytes));
+            String serverName = in.readUTF();
+            String playerName = in.readUTF();
 
-                String serverName = msgin.readUTF();
-                String playerName = msgin.readUTF();
+            getLogger().warning(String.format( "Migration request received for player %s to node %s", playerName, serverName ));
 
-                getLogger().warning(String.format( "MIMC | Migration request received for player %s to node %s", playerName, serverName ));
+            if (server.preparePlayerForMigration(playerName)) {
+                ByteArrayDataOutput out = ByteStreams.newDataOutput();
+                out.writeUTF("migration-prepared");
+                out.writeUTF(serverName);
+                out.writeUTF(playerName);
+
+                getLogger().warning(String.format( "Migration preparation succeeded for player %s", playerName ));
+
+                player.sendPluginMessage(getPlugin(MigratePlugin.class), "mimc:channel", out.toByteArray());
+            } else {
+                ByteArrayDataOutput out = ByteStreams.newDataOutput();
+                out.writeUTF("migration-preparation-failed");
+                out.writeUTF(serverName);
+                out.writeUTF(playerName);
+
+                getLogger().warning(String.format( "Migration preparation failed for player %s", playerName ));
+
+                player.sendPluginMessage(getPlugin(MigratePlugin.class), "mimc:channel", out.toByteArray());
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
     }
 }
