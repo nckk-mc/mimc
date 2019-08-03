@@ -28,7 +28,12 @@
 	
 	# 4. Apply patches
 	cd ../../Paper-Server
-	for patch in paper-patches/*.patch; do
+	for patch in ../../../paper-patches/*.patch; do
+		git apply $patch
+	done
+
+	cd ../../Paper-Api
+	for patch in ../../../paper-api-patches/*.patch; do
 		git apply $patch
 	done
 

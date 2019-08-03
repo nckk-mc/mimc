@@ -1,32 +1,12 @@
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
-index 3dbe83c7..17f35656 100644
+index 6eef4592..ad98a18b 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
 +++ b/src/main/java/net/minecraft/server/MinecraftServer.java
-@@ -16,6 +16,7 @@ import io.netty.buffer.ByteBufOutputStream;
- import io.netty.buffer.Unpooled;
- import it.unimi.dsi.fastutil.longs.LongIterator;
- import java.awt.GraphicsEnvironment;
-+
- import java.awt.image.BufferedImage;
- import java.io.File;
- import java.io.IOException;
-@@ -45,6 +46,7 @@ import javax.annotation.Nullable;
- import javax.imageio.ImageIO;
- import joptsimple.NonOptionArgumentSpec;
- import joptsimple.OptionParser;
-+
- import joptsimple.OptionSet;
- import joptsimple.OptionSpec;
- import org.apache.commons.lang3.Validate;
-@@ -681,10 +683,26 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
-         worldserver1.getWorldBorder().a(worlddata);
-         worlddata.c(this.getBossBattleCustomData().c());
-         worldserver1.getDataManager().saveWorldData(worlddata, this.getPlayerList().r());
-+
-         } // CraftBukkit - moved down
+@@ -698,6 +698,23 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
          return flag3;
      }
  
++    // MIMC start
 +    public boolean preparePlayerForMigration(String playerName) {
 +        LOGGER.warn("MIMC | Running MinecraftServer::preparePlayerForMigration()");
 +
@@ -41,16 +21,17 @@ index 3dbe83c7..17f35656 100644
 +
 +        return true;
 +    }
++    // MIMC end
 +
      @Override
      public void close() {
          this.stop();
 diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
-index 86831c35..6ffefcb3 100644
+index fd0d2b6e..dc59b3f8 100644
 --- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
 +++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
-@@ -1150,6 +1150,17 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
-         });
+@@ -791,6 +791,17 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+         }
      }
  
 +    // MIMC start
@@ -64,44 +45,36 @@ index 86831c35..6ffefcb3 100644
 +    }
 +    // MIMC end
 +
-     public class EntityTracker {
+     protected void setViewDistance(int i) {
+         int j = MathHelper.clamp(i + 1, 3, 33);
  
-         private final EntityTrackerEntry trackerEntry;
 diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
-index a0b64480..15daa530 100644
+index e7b8b2e9..f36ae899 100644
 --- a/src/main/java/net/minecraft/server/PlayerConnection.java
 +++ b/src/main/java/net/minecraft/server/PlayerConnection.java
-@@ -1221,6 +1221,10 @@ public class PlayerConnection implements PacketListenerPlayIn {
+@@ -1227,6 +1227,12 @@ public class PlayerConnection implements PacketListenerPlayIn {
  
          this.A = this.e;
          this.player.setLocation(d0, d1, d2, f, f1);
++
 +        // MIMC start
 +        this.minecraftServer.LOGGER.warn("MIMC | Saving players after teleport and before communicating back to BungeeCord");
 +        this.minecraftServer.getPlayerList().savePlayers();
 +        // MIMC end
++
          this.player.playerConnection.sendPacket(new PacketPlayOutPosition(d0 - d3, d1 - d4, d2 - d5, f - f2, f1 - f3, set, this.teleportAwait));
      }
  
 diff --git a/src/main/java/net/minecraft/server/WorldNBTStorage.java b/src/main/java/net/minecraft/server/WorldNBTStorage.java
-index 551376ff..53f54f3d 100644
+index 551376ff..1eb5a4d3 100644
 --- a/src/main/java/net/minecraft/server/WorldNBTStorage.java
 +++ b/src/main/java/net/minecraft/server/WorldNBTStorage.java
-@@ -98,6 +98,8 @@ public class WorldNBTStorage implements IPlayerFileData {
-     }
- 
-     public void saveWorldData(WorldData worlddata, @Nullable NBTTagCompound nbttagcompound) {
-+//        LOGGER.info("MIMC | Writing WorldNBTStorage::saveWorldData()");
-+
-         worlddata.d(19133);
-         NBTTagCompound nbttagcompound1 = worlddata.a(nbttagcompound);
-         NBTTagCompound nbttagcompound2 = new NBTTagCompound();
-@@ -105,6 +107,13 @@ public class WorldNBTStorage implements IPlayerFileData {
+@@ -105,6 +105,12 @@ public class WorldNBTStorage implements IPlayerFileData {
          nbttagcompound2.set("Data", nbttagcompound1);
  
          try {
 +            // MIMC start
 +            if (worlddata.world != null && worlddata.world.isMigrating) {
-+                //LOGGER.info("MIMC | isMigrating so skipping WorldNBTStorage::saveWorldData()");
 +                return;
 +            }
 +            // MIMC end
@@ -109,35 +82,11 @@ index 551376ff..53f54f3d 100644
              File file = new File(this.baseDir, "level.dat_new");
              File file1 = new File(this.baseDir, "level.dat_old");
              File file2 = new File(this.baseDir, "level.dat");
-@@ -132,6 +141,7 @@ public class WorldNBTStorage implements IPlayerFileData {
-     private void h() {
-         try {
-             File file = new File(this.baseDir, "session.lock");
-+            LOGGER.info("MIMC | Writing session.lock");
-             DataOutputStream dataoutputstream = new DataOutputStream(new FileOutputStream(file));
- 
-             try {
-@@ -199,6 +209,7 @@ public class WorldNBTStorage implements IPlayerFileData {
-             File file = new File(this.playerDir, entityhuman.getUniqueIDString() + ".dat.tmp");
-             File file1 = new File(this.playerDir, entityhuman.getUniqueIDString() + ".dat");
- 
-+            LOGGER.info("MIMC | Writing save(EntityHuman entityhuman)");
-             NBTCompressedStreamTools.a(nbttagcompound, (OutputStream) (new FileOutputStream(file)));
-             if (file1.exists()) {
-                 file1.delete();
-@@ -327,6 +338,7 @@ public class WorldNBTStorage implements IPlayerFileData {
-         uuid = UUID.randomUUID();
-         DataOutputStream dos = null;
-         try {
-+            LOGGER.info("MIMC | Writing getUUID()");
-             dos = new DataOutputStream(new FileOutputStream(file1));
-             dos.writeLong(uuid.getMostSignificantBits());
-             dos.writeLong(uuid.getLeastSignificantBits());
 diff --git a/src/main/java/net/minecraft/server/WorldServer.java b/src/main/java/net/minecraft/server/WorldServer.java
-index 135ec94c..98427c9d 100644
+index 451ad4f3..a43e0b63 100644
 --- a/src/main/java/net/minecraft/server/WorldServer.java
 +++ b/src/main/java/net/minecraft/server/WorldServer.java
-@@ -68,6 +68,10 @@ public class WorldServer extends World {
+@@ -71,6 +71,10 @@ public class WorldServer extends World {
      @Nullable
      private final MobSpawnerTrader mobSpawnerTrader;
  
@@ -149,7 +98,7 @@ index 135ec94c..98427c9d 100644
      private int tickPosition;
      boolean hasPhysicsEvent = true; // Paper
 diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
-index 5884d92f..a67886f4 100644
+index 05886414..882f984d 100644
 --- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 +++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
 @@ -41,6 +41,8 @@ import java.util.function.Consumer;
@@ -170,7 +119,7 @@ index 5884d92f..a67886f4 100644
      private final String serverName = "Paper"; // Paper
      private final String serverVersion;
      private final String bukkitVersion = Versioning.getBukkitVersion();
-@@ -2147,4 +2149,11 @@ public final class CraftServer implements Server {
+@@ -2161,4 +2163,11 @@ public final class CraftServer implements Server {
          return new com.destroystokyo.paper.profile.CraftPlayerProfile(uuid, name);
      }
      // Paper end

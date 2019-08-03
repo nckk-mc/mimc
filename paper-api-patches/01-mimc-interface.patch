@@ -1,0 +1,14 @@
+diff --git a/src/main/java/mimc/MimcServer.java b/src/main/java/mimc/MimcServer.java
+new file mode 100644
+index 00000000..c4bf4640
+--- /dev/null
++++ b/src/main/java/mimc/MimcServer.java
+@@ -0,0 +1,8 @@
++package mimc;
++
++import org.bukkit.Server;
++import org.jetbrains.annotations.NotNull;
++
++public interface MimcServer extends Server {
++    boolean preparePlayerForMigration(@NotNull String playerName);
++}

@@ -12,3 +12,4 @@
 ## Don't forget
 ### Players can still do /server
 - Disable this. Players don't get to choose their node 
+
