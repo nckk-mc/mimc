@@ -8,10 +8,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
+    private final String CHANNEL_NAME = "mimc:channel";
+
     @Override
     public void onEnable() {
-        this.getServer().getMessenger().registerIncomingPluginChannel(this, "mimc:channel", this);
-        this.getServer().getMessenger().registerOutgoingPluginChannel(this, "mimc:channel");
+        this.getServer().getMessenger().registerIncomingPluginChannel(this, CHANNEL_NAME, this);
+        this.getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL_NAME);
         getLogger().warning("Plugin was enabled.");
     }
 
@@ -22,7 +24,7 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
 
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        if (!channel.equalsIgnoreCase("mimc:channel")) {
+        if (!channel.equalsIgnoreCase(CHANNEL_NAME)) {
             return;
         }
 
@@ -47,7 +49,7 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
 
                 getLogger().warning(String.format( "Migration preparation succeeded for player %s", playerName ));
 
-                player.sendPluginMessage(getPlugin(MigratePlugin.class), "mimc:channel", out.toByteArray());
+                player.sendPluginMessage(getPlugin(MigratePlugin.class), CHANNEL_NAME, out.toByteArray());
             } else {
                 ByteArrayDataOutput out = ByteStreams.newDataOutput();
                 out.writeUTF("migration-preparation-failed");
@@ -56,7 +58,7 @@ public class MigratePlugin extends JavaPlugin implements PluginMessageListener {
 
                 getLogger().warning(String.format( "Migration preparation failed for player %s", playerName ));
 
-                player.sendPluginMessage(getPlugin(MigratePlugin.class), "mimc:channel", out.toByteArray());
+                player.sendPluginMessage(getPlugin(MigratePlugin.class), CHANNEL_NAME, out.toByteArray());
             }
         }
     }
