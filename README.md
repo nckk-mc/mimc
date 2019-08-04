@@ -29,7 +29,4 @@ This will build & run the server to create necessary files. Once it's completed 
 	./update.sh
 
 ## Some links
-- https://youtu.be/2auvuJ9Julw
-- https://youtu.be/glqdSwo8FVE
-- https://youtu.be/0fzjOwTmFH8
-- https://youtu.be/UC9dTWnxd4s
+- YouTube: https://www.youtube.com/channel/UCMvt3k7RQgsGGOMKQyErBYg
