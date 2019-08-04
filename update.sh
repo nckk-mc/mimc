@@ -4,8 +4,20 @@ if [ ! -d "Paper" ]; then
 	echo "Paper directory does not exist. Run setup.sh first."
 	exit -1
 fi
+if [ ! -d "Paper/Paper-API" ]; then
+	echo "Paper/Paper-API directory does not exist. Run setup.sh first."
+	exit -1
+fi
+if [ ! -d "Paper/Paper-Server" ]; then
+	echo "Paper/Paper-Server directory does not exist. Run setup.sh first."
+	exit -1
+fi
 if [ ! -d "Waterfall" ]; then
 	echo "Waterfall directory does not exist. Run setup.sh first."
+	exit -1
+fi
+if [ ! -d "Waterfall/Waterfall-Proxy" ]; then
+	echo "Waterfall/Waterfall-Proxy directory does not exist. Run setup.sh first."
 	exit -1
 fi
 
