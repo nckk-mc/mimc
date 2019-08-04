@@ -1,0 +1,64 @@
+commit c7bb313a580ed4c44b6ab42fe414d4ddc7fd1700
+Author: nckk-mc <nckk-mc@myicts.be>
+Date:   Sun Aug 4 22:43:48 2019 +0200
+
+    Adds support for saving playerdata from plugin
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index fbf99108..3daf8026 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -715,6 +715,10 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+ 
+         return true;
+     }
++    public boolean savePlayerData(String playerName) {
++        getPlayerList().savePlayer(playerName);
++        return true;
++    }
+     // MIMC end
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index a183bb45..f22e0a52 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -985,6 +985,24 @@ public abstract class PlayerList {
+         return null; }); // Paper - ensure main
+     }
+ 
++    // MIMC start
++    public void savePlayer(String playerName) {
++        MCUtil.ensureMain("Save Player"
++            , () -> {
++                for (int i = 0; i < this.players.size(); ++i) {
++                    EntityPlayer player = this.players.get(i);
++                    if (player.getName().equals(playerName)) {
++                        LOGGER.info(String.format("MIMC | Saving PlayerFile %s", playerName));
++                        this.savePlayerFile(player);
++                        return null;
++                    }
++                }
++                LOGGER.info(String.format("MIMC | Player %s not found...", playerName));
++                return null;
++        });
++    }
++    // MIMC end
++
+     public WhiteList getWhitelist() {
+         return this.whitelist;
+     }
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 882f984d..ba6907b2 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -2169,5 +2169,9 @@ public final class CraftServer implements MimcServer {
+     public boolean preparePlayerForMigration(String playerName) {
+         return this.console.preparePlayerForMigration(playerName);
+     }
++    @Override
++    public boolean savePlayerData(String playerName) {
++        return this.console.savePlayerData(playerName);
++    }
+     // MIMC end
+ }

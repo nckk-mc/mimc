@@ -1,0 +1,58 @@
+commit fc7cad5e065db896b5c164beace2f834cd708ddf
+Author: nckk-mc <nckk-mc@myicts.be>
+Date:   Sun Aug 4 22:44:48 2019 +0200
+
+    Disables player teleporting
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index cd5bb3c9..959173be 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -81,7 +81,7 @@ public class PartitionManager {
+         }
+         return player;
+     }
+-    public Player movePlayer(UUID uuid
++    public void movePlayer(UUID uuid
+             , double x, boolean xIsRelative
+             , double y, boolean yIsRelative
+             , double z, boolean zIsRelative
+@@ -97,7 +97,6 @@ public class PartitionManager {
+ 
+             migratePlayer(player);
+         }
+-        return player;
+     }
+ 
+     public Player addPlayer(UserConnection userCon) {
+@@ -166,18 +165,18 @@ public class PartitionManager {
+                 p.userCon.connect(servers.get(target.serverName), (result, error) -> {
+                     if (result) {
+                         // Immediately close loading screen
+-                        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+-                        out.writeByte(0x35);
+-                        out.writeDouble(p.location.x);
+-                        out.writeDouble(p.location.y);
+-                        out.writeDouble(p.location.z);
+-                        out.writeFloat(p.location.yaw);
+-                        out.writeFloat(p.location.pitch);
+-                        out.writeByte(0); // Flags
+-                        out.writeByte(0); // Teleport ID
+-                        ByteBuf buf = Unpooled.wrappedBuffer(out.toByteArray());
+-                        PacketWrapper packet = new PacketWrapper( null, buf );
+-                        p.userCon.sendPacket(packet);
++//                        ByteArrayDataOutput out = ByteStreams.newDataOutput();
++//                        out.writeByte(0x35);
++//                        out.writeDouble(p.location.x);
++//                        out.writeDouble(p.location.y);
++//                        out.writeDouble(p.location.z);
++//                        out.writeFloat(p.location.yaw);
++//                        out.writeFloat(p.location.pitch);
++//                        out.writeByte(0); // Flags
++//                        out.writeByte(0); // Teleport ID
++//                        ByteBuf buf = Unpooled.wrappedBuffer(out.toByteArray());
++//                        PacketWrapper packet = new PacketWrapper( null, buf );
++//                        p.userCon.sendPacket(packet);
+ 
+                     } else {
+                         String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
