@@ -90,4 +90,4 @@ sed -i 's/max_players: 1/max_players: 10000/g' config.yml
 sed -i 's/online_mode: true/world_folder: ..\/..\/Paper\/work\/test-server\/\nonline_mode: true/g' config.yml
 sed -i 's/ip_forward: false/ip_forward: true/g' config.yml
 
-cd..
+cd ..
