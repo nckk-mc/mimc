@@ -8,7 +8,7 @@ MIMC modifies Paperclip and Waterfall to allow Minecraft to run one world with m
     git clone https://github.com/nckk-mc/mimc.git
 	cd mimc
     ./setup.sh
-
+This will build & run the server to create necessary files. Once it's completed ```stop``` the server and `Ctrl + C` to continue the setup.
 ## Running the servers
 
     ./start_waterfall.sh
