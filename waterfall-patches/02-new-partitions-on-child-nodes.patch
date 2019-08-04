@@ -1,0 +1,38 @@
+commit 04b2c9a3b5a3bdaa95dfec6a255d85de1c77ab1d
+Author: nckk-mc <nckk-mc@myicts.be>
+Date:   Sun Aug 4 18:14:27 2019 +0200
+
+    New partitions should always be created on child nodes
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 8328773d..211e9c91 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -198,17 +198,21 @@ public class PartitionManager {
+         Iterator<Map.Entry<String, ServerInfo>> iterator = this.servers.entrySet().iterator();
+         while (iterator.hasNext()) {
+             String serverName = iterator.next().getKey();
+-            Long count = this.partitions.stream().filter(x -> x.getServerName().equals(serverName)).count();
+-            bungeeCord.getLogger().info(String.format("Server %s has %d partitions.", serverName, count));
+-            serverPartitionCounts.put(serverName, count);
++            if (!serverName.equals(SPAWN_SERVERNAME)) {
++                Long playerCount = this.partitions
++                        .stream().filter(x -> x.getServerName().equals(serverName))
++                        .mapToLong(x -> x.players.size())
++                        .sum();
++                bungeeCord.getLogger().info(String.format("Server %s has %d players.", serverName, playerCount));
++                serverPartitionCounts.put(serverName, playerCount);
++            }
+         }
+ 
+-        // Gets the server with the least amount of partitions running on it
+-        // TODO: This should be much more intelligent, like least amount of players, or least amount of load (1.0/tps?)
++        // Gets the server with the least amount of players running on it
+         String serverWithFewestPartitions = serverPartitionCounts.entrySet().stream()
+                 .min(Comparator.comparing(Map.Entry::getValue))
+                 .get().getKey();
+-        bungeeCord.getLogger().info(String.format("Server with fewest partitions %s", serverWithFewestPartitions));
++        bungeeCord.getLogger().info(String.format("Server with fewest players %s", serverWithFewestPartitions));
+         return serverWithFewestPartitions;
+     }
+     Partition migratePlayer(Player p) {
