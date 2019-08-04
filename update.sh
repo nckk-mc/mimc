@@ -28,7 +28,7 @@ for patch in ../../paper-patches/*.patch; do git apply $patch; done
 cd ..
 
 echo "Applying paper-api-patches"
-cd Paper-Api
+cd Paper-API
 for patch in ../../paper-api-patches/*.patch; do git apply $patch; done
 cd ..
 
