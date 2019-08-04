@@ -1,9 +1,15 @@
+commit e67773da1484eff273bbd6adea28e13c58c997be
+Author: nckk-mc <nckk-mc@myicts.be>
+Date:   Mon Aug 5 01:17:57 2019 +0200
+
+    Extends MimcServer with savePlayerData
+
 diff --git a/src/main/java/mimc/MimcServer.java b/src/main/java/mimc/MimcServer.java
 new file mode 100644
-index 00000000..c4bf4640
+index 00000000..c74afaa2
 --- /dev/null
 +++ b/src/main/java/mimc/MimcServer.java
-@@ -0,0 +1,8 @@
+@@ -0,0 +1,9 @@
 +package mimc;
 +
 +import org.bukkit.Server;
@@ -11,4 +17,5 @@ index 00000000..c4bf4640
 +
 +public interface MimcServer extends Server {
 +    boolean preparePlayerForMigration(@NotNull String playerName);
++    boolean savePlayerData(@NotNull String playerName);
 +}

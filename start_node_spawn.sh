@@ -10,3 +10,4 @@ baseargs="$baseargs -XX:InitiatingHeapOccupancyPercent=10 -XX:G1MixedGCLiveThres
 baseargs="$baseargs -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5100"
 cmd="java ${PAPER_TEST_BASE_JVM_ARGS:-$baseargs} -jar $jar -p $port"
 /usr/bin/env bash -c "$cmd"
+
