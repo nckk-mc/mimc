@@ -34,4 +34,4 @@ echo "MIMC | Building..."
 echo ""
 mvn
 
-cd..
+cd ..
