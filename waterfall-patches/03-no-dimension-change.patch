@@ -1,0 +1,164 @@
+commit d137ff147a6f9e358e92392fb1ead9702c56fffa
+Author: nckk-mc <nckk-mc@myicts.be>
+Date:   Sun Aug 4 21:11:25 2019 +0200
+
+    Disables Dimension Change for seamless transition
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+index 72f487dc..d404ffe9 100644
+--- a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
++++ b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+@@ -259,66 +259,68 @@ public class ServerConnector extends PacketHandler
+             user.getServer().setObsolete( true );
+             user.getTabListHandler().onServerChange();
+ 
+-            Scoreboard serverScoreboard = user.getServerSentScoreboard();
+-            if ( !user.isDisableEntityMetadataRewrite() ) { // Waterfall
+-            for ( Objective objective : serverScoreboard.getObjectives() )
+-            {
+-                user.unsafe().sendPacket( new ScoreboardObjective( objective.getName(), objective.getValue(), ScoreboardObjective.HealthDisplay.fromString( objective.getType() ), (byte) 1 ) );
+-            }
+-            for ( Score score : serverScoreboard.getScores() )
+-            {
+-                user.unsafe().sendPacket( new ScoreboardScore( score.getItemName(), (byte) 1, score.getScoreName(), score.getValue() ) );
+-            }
+-            for ( Team team : serverScoreboard.getTeams() )
+-            {
+-                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.Team( team.getName() ) );
+-            }
+-            } // Waterfall
+-            serverScoreboard.clear();
+-
+-            for ( UUID bossbar : user.getSentBossBars() )
+-            {
+-                // Send remove bossbar packet
+-                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.BossBar( bossbar, 1 ) );
+-            }
+-            user.getSentBossBars().clear();
+-
+-            // Update debug info from login packet
+-            user.unsafe().sendPacket( new EntityStatus( user.getClientEntityId(), login.isReducedDebugInfo() ? EntityStatus.DEBUG_INFO_REDUCED : EntityStatus.DEBUG_INFO_NORMAL ) );
+-
+-            user.setDimensionChange( true );
+-            if ( !user.isDisableEntityMetadataRewrite() && login.getDimension() == user.getDimension() ) // Waterfall - defer
+-            {
+-                user.unsafe().sendPacket( new Respawn( ( login.getDimension() >= 0 ? -1 : 0 ), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
+-            }
+-
+-            user.setServerEntityId( login.getEntityId() );
+-            // Waterfall start
+-            if ( user.isDisableEntityMetadataRewrite() ) {
+-                // Ensure that we maintain consistency
+-                user.setClientEntityId( login.getEntityId() );
+-
+-                // Only send if we are not in the same dimension
+-                if (user.getDimension() != login.getDimension()) {
+-                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
+-                }
+-
+-                Login modLogin = new Login( login.getEntityId(),login.getGameMode(), login.getDimension(),
+-                        login.getDifficulty(), login.getMaxPlayers(), login.getLevelType(), login.getViewDistance(), login.isReducedDebugInfo() );
+-                user.unsafe().sendPacket(modLogin);
+-
+-                // Only send if we're in the same dimension
+-                if (user.getDimension() == login.getDimension()) {
+-                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
+-                }
+-            }
+-            // Waterfall end
+-            user.unsafe().sendPacket( new Respawn( login.getDimension(), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
+-            if ( user.getPendingConnection().getVersion() >= ProtocolConstants.MINECRAFT_1_14 )
+-            {
+-                user.unsafe().sendPacket( new ViewDistance( login.getViewDistance() ) );
+-            }
+-            user.setDimension( login.getDimension() );
++            // MIMC start
++//            Scoreboard serverScoreboard = user.getServerSentScoreboard();
++//            if ( !user.isDisableEntityMetadataRewrite() ) { // Waterfall
++//            for ( Objective objective : serverScoreboard.getObjectives() )
++//            {
++//                user.unsafe().sendPacket( new ScoreboardObjective( objective.getName(), objective.getValue(), ScoreboardObjective.HealthDisplay.fromString( objective.getType() ), (byte) 1 ) );
++//            }
++//            for ( Score score : serverScoreboard.getScores() )
++//            {
++//                user.unsafe().sendPacket( new ScoreboardScore( score.getItemName(), (byte) 1, score.getScoreName(), score.getValue() ) );
++//            }
++//            for ( Team team : serverScoreboard.getTeams() )
++//            {
++//                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.Team( team.getName() ) );
++//            }
++//            } // Waterfall
++//            serverScoreboard.clear();
++//
++//            for ( UUID bossbar : user.getSentBossBars() )
++//            {
++//                // Send remove bossbar packet
++//                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.BossBar( bossbar, 1 ) );
++//            }
++//            user.getSentBossBars().clear();
++//
++//            // Update debug info from login packet
++//            user.unsafe().sendPacket( new EntityStatus( user.getClientEntityId(), login.isReducedDebugInfo() ? EntityStatus.DEBUG_INFO_REDUCED : EntityStatus.DEBUG_INFO_NORMAL ) );
++//
++//            user.setDimensionChange( true );
++//            if ( !user.isDisableEntityMetadataRewrite() && login.getDimension() == user.getDimension() ) // Waterfall - defer
++//            {
++//                user.unsafe().sendPacket( new Respawn( ( login.getDimension() >= 0 ? -1 : 0 ), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
++//            }
++//
++//            user.setServerEntityId( login.getEntityId() );
++//            // Waterfall start
++//            if ( user.isDisableEntityMetadataRewrite() ) {
++//                // Ensure that we maintain consistency
++//                user.setClientEntityId( login.getEntityId() );
++//
++//                // Only send if we are not in the same dimension
++//                if (user.getDimension() != login.getDimension()) {
++//                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++//                }
++//
++//                Login modLogin = new Login( login.getEntityId(),login.getGameMode(), login.getDimension(),
++//                        login.getDifficulty(), login.getMaxPlayers(), login.getLevelType(), login.getViewDistance(), login.isReducedDebugInfo() );
++//                user.unsafe().sendPacket(modLogin);
++//
++//                // Only send if we're in the same dimension
++//                if (user.getDimension() == login.getDimension()) {
++//                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++//                }
++//            }
++//            // Waterfall end
++//            user.unsafe().sendPacket( new Respawn( login.getDimension(), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
++//            if ( user.getPendingConnection().getVersion() >= ProtocolConstants.MINECRAFT_1_14 )
++//            {
++//                user.unsafe().sendPacket( new ViewDistance( login.getViewDistance() ) );
++//            }
++//            user.setDimension( login.getDimension() );
++            // MIMC end
+ 
+             // Remove from old servers
+             user.getServer().disconnect( "Quitting" );
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 5aa1f7a7..845d6a33 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -222,7 +222,7 @@ public class DownstreamBridge extends PacketHandler
+ //            case 0x33: packetName = "PacketPlayOutPlayerInfo"; break;
+ //            case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
+             case 0x35:
+-                //packetName = "PacketPlayOutPlayerPositionAndLook";
++//                packetName = "PacketPlayOutPlayerPositionAndLook";
+                 updatePlayerLocation(packet);
+                 break;
+ //            case 0x36: packetName = "PacketPlayOutUnlockRecipes"; break;
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 211e9c91..cd5bb3c9 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -178,6 +178,7 @@ public class PartitionManager {
+                         ByteBuf buf = Unpooled.wrappedBuffer(out.toByteArray());
+                         PacketWrapper packet = new PacketWrapper( null, buf );
+                         p.userCon.sendPacket(packet);
++
+                     } else {
+                         String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
+                         this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
