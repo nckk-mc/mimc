@@ -13,9 +13,10 @@ MIMC modifies Paperclip and Waterfall to allow Minecraft to run one world with m
 
     ./start_waterfall.sh
 	./start_node_spawn.sh
-	./start_node_s1.sh
+	./start_node_child.sh
 
 ## Some links
-- https://www.youtube.com/watch?v=2auvuJ9Julw
-- https://www.youtube.com/watch?v=glqdSwo8FVE
-- https://www.youtube.com/watch?v=0fzjOwTmFH8
+- https://youtu.be/2auvuJ9Julw
+- https://youtu.be/glqdSwo8FVE
+- https://youtu.be/0fzjOwTmFH8
+- https://youtu.be/UC9dTWnxd4s

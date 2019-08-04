@@ -1,0 +1,1751 @@
+diff --git a/api/src/main/java/net/md_5/bungee/api/ProxyServer.java b/api/src/main/java/net/md_5/bungee/api/ProxyServer.java
+index d44ac67e..1c9fd8e9 100644
+--- a/api/src/main/java/net/md_5/bungee/api/ProxyServer.java
++++ b/api/src/main/java/net/md_5/bungee/api/ProxyServer.java
+@@ -314,5 +314,4 @@ public abstract class ProxyServer
+      * @see Title
+      */
+     public abstract Title createTitle();
+-
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+index 8acdc22d..3f831280 100644
+--- a/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
++++ b/proxy/src/main/java/net/md_5/bungee/BungeeCord.java
+@@ -71,16 +71,12 @@ import net.md_5.bungee.chat.ScoreComponentSerializer;
+ import net.md_5.bungee.chat.SelectorComponentSerializer;
+ import net.md_5.bungee.chat.TextComponentSerializer;
+ import net.md_5.bungee.chat.TranslatableComponentSerializer;
+-import net.md_5.bungee.command.CommandBungee;
+-import net.md_5.bungee.command.CommandEnd;
+-import net.md_5.bungee.command.CommandIP;
+-import net.md_5.bungee.command.CommandPerms;
+-import net.md_5.bungee.command.CommandReload;
+-import net.md_5.bungee.command.ConsoleCommandSender;
++import net.md_5.bungee.command.*;
+ import net.md_5.bungee.compress.CompressFactory;
+ import net.md_5.bungee.conf.Configuration;
+ import net.md_5.bungee.conf.YamlConfig;
+ import net.md_5.bungee.forge.ForgeConstants;
++import net.md_5.bungee.mimc.PartitionManager;
+ import net.md_5.bungee.module.ModuleManager;
+ import net.md_5.bungee.netty.PipelineUtils;
+ import net.md_5.bungee.protocol.DefinedPacket;
+@@ -171,6 +167,10 @@ public class BungeeCord extends ProxyServer
+         registerChannel( "BungeeCord" );
+     }
+ 
++    // MIMC Start
++    public final PartitionManager partitionManager = new PartitionManager(this);
++    // MIMC End
++
+     public static BungeeCord getInstance()
+     {
+         return (BungeeCord) ProxyServer.getInstance();
+diff --git a/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java b/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
+index 5841cf63..632c3298 100644
+--- a/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
++++ b/proxy/src/main/java/net/md_5/bungee/conf/Configuration.java
+@@ -67,6 +67,7 @@ public abstract class Configuration implements ProxyConfig
+     private int compressionThreshold = 256;
+     private boolean preventProxyConnections;
+     private boolean forgeSupport = true; // Waterfall: default to enabled
++    private String worldFolder;
+ 
+     @Synchronized("serversLock") // Waterfall
+     public void load()
+@@ -100,6 +101,11 @@ public abstract class Configuration implements ProxyConfig
+         preventProxyConnections = adapter.getBoolean( "prevent_proxy_connections", preventProxyConnections );
+         forgeSupport = adapter.getBoolean( "forge_support", forgeSupport );
+ 
++        // MIMC start
++        worldFolder = adapter.getString( "world_folder", worldFolder );
++        Preconditions.checkArgument( worldFolder != null && !worldFolder.isEmpty(), "No worldFolder defined" );
++        // MIMC end
++
+         disabledCommands = new CaseInsensitiveSet( (Collection<String>) adapter.getList( "disabled_commands", Arrays.asList( "disabledcommandhere" ) ) );
+ 
+         Preconditions.checkArgument( listeners != null && !listeners.isEmpty(), "No listeners defined." );
+@@ -107,6 +113,11 @@ public abstract class Configuration implements ProxyConfig
+         Map<String, ServerInfo> newServers = adapter.getServers();
+         Preconditions.checkArgument( newServers != null && !newServers.isEmpty(), "No servers defined" );
+ 
++        // MIMC start
++        BungeeCord.getInstance().partitionManager.initialize(getWorldFolder(), newServers);
++        // MIMC end
++
++
+         if ( servers == null )
+         {
+             servers = new CaseInsensitiveMap<>( newServers );
+@@ -242,4 +253,10 @@ public abstract class Configuration implements ProxyConfig
+         return changed;
+     }
+     // Waterfall end
++
++    // MIMC start
++    public String getWorldFolder() {
++        return worldFolder;
++    }
++    // MIMC end
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 1f8a2439..5aa1f7a7 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -17,13 +17,17 @@ import io.github.waterfallmc.waterfall.event.ProxyDefineCommandsEvent; // Waterf
+ import io.netty.buffer.ByteBuf;
+ import io.netty.buffer.ByteBufAllocator;
+ import io.netty.buffer.Unpooled;
++
+ import java.io.DataInput;
+ import java.util.ArrayList;
+ import java.util.HashMap; // Waterfall
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Objects; // Waterfall
++import java.util.logging.Level;
++
+ import lombok.RequiredArgsConstructor;
++import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.ServerConnection;
+ import net.md_5.bungee.UserConnection;
+ import net.md_5.bungee.Util;
+@@ -43,6 +47,7 @@ import net.md_5.bungee.api.score.Score;
+ import net.md_5.bungee.api.score.Scoreboard;
+ import net.md_5.bungee.api.score.Team;
+ import net.md_5.bungee.chat.ComponentSerializer;
++import net.md_5.bungee.mimc.PartitionManager;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
+ import net.md_5.bungee.protocol.DefinedPacket;
+@@ -133,10 +138,138 @@ public class DownstreamBridge extends PacketHandler
+         return !server.isObsolete();
+     }
+ 
++    private void updatePlayerLocation(PacketWrapper packet) {
++        double x = packet.buf.readDouble();
++        double y = packet.buf.readDouble();
++        double z = packet.buf.readDouble();
++        float yaw = packet.buf.readFloat();
++        float pitch = packet.buf.readFloat();
++        byte flags = packet.buf.readByte();
++        //bungee.getLogger().info( String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++
++        ((BungeeCord)bungee).partitionManager.movePlayer(
++                con.getUniqueId()
++                , x, (flags & 0x1) == 0x1
++                , y, (flags & 0x2) == 0x2
++                , z, (flags & 0x4) == 0x4
++                , yaw
++                , pitch
++            );
++    }
++
+     @Override
+     public void handle(PacketWrapper packet) throws Exception
+     {
+         con.getEntityRewrite().rewriteClientbound( packet.buf, con.getServerEntityId(), con.getClientEntityId(), con.getPendingConnection().getVersion() );
++
++        int readerIndex = packet.buf.readerIndex();
++        int packetId = DefinedPacket.readVarInt( packet.buf );
++        // https://wiki.vg/Pre-release_protocol for current packetids
++        // See EnumProtocol in Paper for more info
++        String packetName = null;
++        switch (packetId) {
++//            case 0x00: packetName = "PacketPlayOutSpawnEntity"; break;
++//            case 0x01: packetName = "PacketPlayOutSpawnEntityExperienceOrb"; break;
++//            case 0x02: packetName = "PacketPlayOutSpawnGlobalEntity"; break;
++//            case 0x03: packetName = "PacketPlayOutSpawnEntityLiving"; break;
++//            case 0x04: packetName = "PacketPlayOutSpawnEntityPainting"; break;
++//            case 0x05: packetName = "PacketPlayOutNamedEntitySpawn"; break;
++//            case 0x06: packetName = "PacketPlayOutAnimation"; break;
++//            case 0x07: packetName = "PacketPlayOutStatistics"; break;
++//            case 0x08: packetName = "PacketPlayOutBlockBreakAnimation"; break;
++//            case 0x09: packetName = "PacketPlayOutUpdateBlockEntity"; break;
++//            case 0x0A: packetName = "PacketPlayOutBlockAction"; break;
++//            case 0x0B: packetName = "PacketPlayOutBlockChange"; break;
++//            case 0x0C: packetName = "PacketPlayOutBossBar"; break;
++//            case 0x0D: packetName = "PacketPlayOutServerDifficulty"; break;
++//            case 0x0E: packetName = "PacketPlayOutChatMessage"; break;
++//            case 0x0F: packetName = "PacketPlayOutMultiBlockChange"; break;
++//            case 0x10: packetName = "PacketPlayOutTabComplete"; break;
++//            case 0x11: packetName = "PacketPlayOutDeclareCommands"; break;
++//            case 0x12: packetName = "PacketPlayOutConfirmTransaction"; break;
++//            case 0x13: packetName = "PacketPlayOutCloseWindow"; break;
++//            case 0x14: packetName = "PacketPlayOutWindowItems"; break;
++//            case 0x15: packetName = "PacketPlayOutWindowProperty"; break;
++//            case 0x16: packetName = "PacketPlayOutSetSlot"; break;
++//            case 0x17: packetName = "PacketPlayOutSetCooldown"; break;
++//            case 0x18: packetName = "PacketPlayOutPluginMessage"; break;
++//            case 0x19: packetName = "PacketPlayOutNamedSoundEffect"; break;
++//            case 0x1A: packetName = "PacketPlayOutDisconnect"; break;
++//            case 0x1B: packetName = "PacketPlayOutEntityStatus"; break;
++//            case 0x1C: packetName = "PacketPlayOutExplosion"; break;
++//            case 0x1D: packetName = "PacketPlayOutUnloadChunk"; break;
++//            case 0x1E: packetName = "PacketPlayOutChangeGameState"; break;
++//            case 0x1F: packetName = "PacketPlayOutOpenHorseWindow"; break;
++//            case 0x20: packetName = "PacketPlayOutKeepAlive"; break;
++//            case 0x21: packetName = "PacketPlayOutChunkData"; break;
++//            case 0x22: packetName = "PacketPlayOutEffect"; break;
++//            case 0x23: packetName = "PacketPlayOutParticle"; break;
++//            case 0x24: packetName = "PacketPlayOutUpdateLight"; break;
++//            case 0x25: packetName = "PacketPlayOutJoinGame"; break;
++//            case 0x26: packetName = "PacketPlayOutMapData"; break;
++//            case 0x27: packetName = "PacketPlayOutTradeList"; break;
++//            case 0x28: packetName = "PacketPlayOutRelEntityMove"; break;
++//            case 0x29: packetName = "PacketPlayOutRelEntityMoveLook"; break;
++//            case 0x2A: packetName = "PacketPlayOutEntityLook"; break;
++//            case 0x2B: packetName = "PacketPlayOutEntity"; break;
++//            case 0x2C: packetName = "PacketPlayOutVehicleMove"; break;
++//            case 0x2D: packetName = "PacketPlayOutOpenBook"; break;
++//            case 0x2E: packetName = "PacketPlayOutOpenWindow"; break;
++//            case 0x2F: packetName = "PacketPlayOutOpenSignEditor"; break;
++//            case 0x30: packetName = "PacketPlayOutCraftRecipeResponse"; break;
++//            case 0x31: packetName = "PacketPlayOutPlayerAbilities"; break;
++//            case 0x32: packetName = "PacketPlayOutCombatEvent"; break;
++//            case 0x33: packetName = "PacketPlayOutPlayerInfo"; break;
++//            case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
++            case 0x35:
++                //packetName = "PacketPlayOutPlayerPositionAndLook";
++                updatePlayerLocation(packet);
++                break;
++//            case 0x36: packetName = "PacketPlayOutUnlockRecipes"; break;
++//            case 0x37: packetName = "PacketPlayOutEntityDestroy"; break;
++//            case 0x38: packetName = "PacketPlayOutRemoveEntityEffect"; break;
++//            case 0x39: packetName = "PacketPlayOutResourcePackSend"; break;
++//            case 0x3A: packetName = "PacketPlayOutRespawn"; break;
++//            case 0x3B: packetName = "PacketPlayOutEntityHeadRotation"; break;
++//            case 0x3C: packetName = "PacketPlayOutSelectAdvancementTab"; break;
++//            case 0x3D: packetName = "PacketPlayOutWorldBorder"; break;
++//            case 0x3E: packetName = "PacketPlayOutCamera"; break;
++//            case 0x3F: packetName = "PacketPlayOutHeldItemChange"; break;
++//            case 0x40: packetName = "PacketPlayOutUpdateViewPosition"; break;
++//            case 0x41: packetName = "PacketPlayOutUpdateViewDistance"; break;
++//            case 0x42: packetName = "PacketPlayOutDisplayScoreboard"; break;
++//            case 0x43: packetName = "PacketPlayOutEntityMetadata"; break;
++//            case 0x44: packetName = "PacketPlayOutEntityDestroy"; break;
++//            case 0x45: packetName = "PacketPlayOutEntityVelocity"; break;
++//            case 0x46: packetName = "PacketPlayOutEntityEquipment"; break;
++//            case 0x47: packetName = "PacketPlayOutSetExperience"; break;
++//            case 0x48: packetName = "PacketPlayOutUpdateHealth"; break;
++//            case 0x49: packetName = "PacketPlayOutScoreboardObjective"; break;
++//            case 0x4A: packetName = "PacketPlayOutMount"; break;
++//            case 0x4B: packetName = "PacketPlayOutTeams"; break;
++//            case 0x4C: packetName = "PacketPlayOutUpdateScore"; break;
++//            case 0x4D: packetName = "PacketPlayOutSpawnPosition"; break;
++//            case 0x4E: packetName = "PacketPlayOutTimeUpdate"; break;
++//            case 0x4F: packetName = "PacketPlayOutTitle"; break;
++//            case 0x50: packetName = "PacketPlayOutEntitySound"; break;
++//            case 0x51: packetName = "PacketPlayOutSoundEffect"; break;
++//            case 0x52: packetName = "PacketPlayOutStopSound"; break;
++//            case 0x53: packetName = "PacketPlayOutPlayerListHeaderAndFooter"; break;
++//            case 0x54: packetName = "PacketPlayOutNbtQueryResponse"; break;
++//            case 0x55: packetName = "PacketPlayOutCollect"; break;
++//            case 0x56: packetName = "PacketPlayOutEntityTeleport"; break;
++//            case 0x57: packetName = "PacketPlayOutAdvancement"; break;
++//            case 0x58: packetName = "PacketPlayOutUpdateAttributes"; break;
++//            case 0x59: packetName = "PacketPlayOutEntityEffect"; break;
++//            case 0x5A: packetName = "PacketPlayOutDeclareRecipes"; break;
++//            case 0x5B: packetName = "PacketPlayOutTags"; break;
++        }
++        if (packetName != null) {
++            bungee.getLogger().info( String.format("Event [%s] 0x%02X: %s", this.con.getName(), packetId, packetName) );
++        }
++
++        packet.buf.readerIndex(readerIndex);
++
+         con.sendPacket( packet );
+     }
+ 
+@@ -261,6 +394,27 @@ public class DownstreamBridge extends PacketHandler
+     {
+         PluginMessageEvent event = new PluginMessageEvent( server, con, pluginMessage.getTag(), pluginMessage.getData().clone() );
+ 
++        if ( pluginMessage.getTag().equals(PartitionManager.CHANNEL_NAME) )
++        {
++            PartitionManager partitionManager = ((BungeeCord)this.bungee).partitionManager;
++
++            DataInput di = pluginMessage.getStream();
++            String subChannel = di.readUTF();
++
++            if (subChannel.equals("migration-prepared"))
++            {
++                String serverName = di.readUTF();
++                String playerName = di.readUTF();
++
++                partitionManager.completeMigration(playerName);
++            }
++            else if (subChannel.equals("migration-preparation-failed"))
++            {
++                String serverName = di.readUTF();
++                String playerName = di.readUTF();
++            }
++        }
++
+         if ( bungee.getPluginManager().callEvent( event ).isCancelled() )
+         {
+             throw CancelSendSignal.INSTANCE;
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java b/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
+index 3a9dab68..738c8355 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/InitialHandler.java
+@@ -3,6 +3,9 @@ package net.md_5.bungee.connection;
+ import com.google.common.base.Charsets;
+ import com.google.common.base.Preconditions;
+ import com.google.gson.Gson;
++
++import java.io.File;
++import java.io.IOException;
+ import java.math.BigInteger;
+ import java.net.InetSocketAddress;
+ import java.net.URLEncoder;
+@@ -38,6 +41,10 @@ import net.md_5.bungee.api.event.ServerConnectEvent;
+ import net.md_5.bungee.chat.ComponentSerializer;
+ import net.md_5.bungee.http.HttpClient;
+ import net.md_5.bungee.jni.cipher.BungeeCipher;
++import net.md_5.bungee.mimc.Player;
++import net.md_5.bungee.mimc.PlayerLocation;
++import net.md_5.bungee.mimc.nbt.NbtFile;
++import net.md_5.bungee.mimc.nbt.NbtTree;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.HandlerBoss;
+ import net.md_5.bungee.netty.PacketHandler;
+@@ -534,7 +541,12 @@ public class InitialHandler extends PacketHandler implements PendingConnection
+                             }
+                             if ( server == null )
+                             {
+-                                server = bungee.getServerInfo( listener.getDefaultServer() );
++                                // MIMC Start
++                                Player player = bungee.partitionManager.addPlayer(userCon);
++                                String serverName = player.partition.getServerName();
++                                bungee.getLogger().log( Level.INFO, "MIMC | forwarding " + userCon.getName() + " to " + serverName);
++                                server = bungee.getServerInfo( serverName );
++                                // MIMC End
+                             }
+ 
+                             userCon.connect( server, null, true, ServerConnectEvent.Reason.JOIN_PROXY );
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index 51d0c6cf..c0a489cd 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -5,10 +5,15 @@ import com.mojang.brigadier.context.StringRange;
+ import com.mojang.brigadier.suggestion.Suggestion;
+ import com.mojang.brigadier.suggestion.Suggestions;
+ import io.github.waterfallmc.waterfall.StringUtil;
++import io.netty.buffer.ByteBuf;
+ import io.netty.channel.Channel;
++
++import java.io.DataInput;
+ import java.util.ArrayList;
+ import java.util.LinkedList;
+ import java.util.List;
++import java.util.logging.Level;
++
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+ import net.md_5.bungee.Util;
+@@ -20,8 +25,10 @@ import net.md_5.bungee.api.event.PluginMessageEvent;
+ import net.md_5.bungee.api.event.SettingsChangedEvent;
+ import net.md_5.bungee.api.event.TabCompleteEvent;
+ import net.md_5.bungee.forge.ForgeConstants;
++import net.md_5.bungee.mimc.PartitionManager;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
++import net.md_5.bungee.protocol.DefinedPacket;
+ import net.md_5.bungee.protocol.PacketWrapper;
+ import net.md_5.bungee.protocol.ProtocolConstants;
+ import net.md_5.bungee.protocol.packet.Chat;
+@@ -65,6 +72,9 @@ public class UpstreamBridge extends PacketHandler
+         con.getTabListHandler().onDisconnect();
+         BungeeCord.getInstance().removeConnection( con );
+ 
++        String playerName = this.con.getName();
++        ((BungeeCord)this.bungee).partitionManager.removePlayer(playerName);
++
+         if ( con.getServer() != null )
+         {
+             // Manually remove from everyone's tab list
+@@ -111,12 +121,91 @@ public class UpstreamBridge extends PacketHandler
+         return con.getServer() != null || packet.packet instanceof PluginMessage;
+     }
+ 
++    private void updatePlayerLocation(PacketWrapper packet) {
++        double x = packet.buf.readDouble();
++        double y = packet.buf.readDouble();
++        double z = packet.buf.readDouble();
++        ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z);
++    }
++    private void updatePlayerLocationAndLook(PacketWrapper packet) {
++        double x = packet.buf.readDouble();
++        double y = packet.buf.readDouble();
++        double z = packet.buf.readDouble();
++        float yaw = packet.buf.readFloat();
++        float pitch = packet.buf.readFloat();
++        ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z, yaw, pitch);
++    }
++
+     @Override
+     public void handle(PacketWrapper packet) throws Exception
+     {
+         if ( con.getServer() != null )
+         {
+             con.getEntityRewrite().rewriteServerbound( packet.buf, con.getClientEntityId(), con.getServerEntityId(), con.getPendingConnection().getVersion() );
++
++            int readerIndex = packet.buf.readerIndex();
++            int packetId = DefinedPacket.readVarInt( packet.buf );
++            // https://wiki.vg/Pre-release_protocol for current packetids
++            String packetName = null;
++            switch (packetId) {
++                //case 0x00: packetName = "PacketPlayInTelportConfirm"; break;
++                //case 0x01: packetName = "PacketPlayInQueryBlockNbt"; break;
++                //case 0x02: packetName = "PacketPlayInSetDifficulty"; break;
++                //case 0x03: packetName = "PacketPlayInChatMessage"; break;
++                //case 0x04: packetName = "PacketPlayInClientStatus"; break;
++                //case 0x05: packetName = "PacketPlayInClientSettings"; break;
++                //case 0x06: packetName = "PacketPlayInTabComplete"; break;
++                //case 0x07: packetName = "PacketPlayInConfirmTransaction"; break;
++                //case 0x08: packetName = "PacketPlayInClickWindowButton"; break;
++                //case 0x09: packetName = "PacketPlayInClickWindow"; break;
++                //case 0x0A: packetName = "PacketPlayInCloseWindow"; break;
++                //case 0x0B: packetName = "PacketPlayInPluginMessage"; break;
++                //case 0x0C: packetName = "PacketPlayInEditBook"; break;
++                //case 0x0D: packetName = "PacketPlayInQueryEntityNbt"; break;
++                //case 0x0E: packetName = "PacketPlayInUseEntity"; break;
++                //case 0x0F: packetName = "PacketPlayInKeepAlive"; break;
++                //case 0x10: packetName = "PacketPlayInLockDifficulty"; break;
++                case 0x11:
++                    //packetName = "PacketPlayInPlayerPosition";
++                    updatePlayerLocation(packet);
++                    break;
++                case 0x12:
++                    //packetName = "PacketPlayInPlayerPositionAndLook";
++                    updatePlayerLocationAndLook(packet);
++                    break;
++                //case 0x13: packetName = "PacketPlayInPlayerLook"; break;
++                //case 0x14: packetName = "PacketPlayInPlayer"; break;
++                //case 0x15: packetName = "PacketPlayInVehicleMove"; break;
++                //case 0x16: packetName = "PacketPlayInSteerBoat"; break;
++                //case 0x17: packetName = "PacketPlayInPickItem"; break;
++                //case 0x18: packetName = "PacketPlayInCraftRecipeRequest"; break;
++                //case 0x19: packetName = "PacketPlayInPlayerAbilities"; break;
++                //case 0x1A: packetName = "PacketPlayInPlayerDigging"; break;
++                //case 0x1B: packetName = "PacketPlayInEntityAction"; break;
++                //case 0x1C: packetName = "PacketPlayInSteerVehicle"; break;
++                //case 0x1D: packetName = "PacketPlayInRecipeBookDelta"; break;
++                //case 0x1E: packetName = "PacketPlayInNameItem"; break;
++                //case 0x1F: packetName = "PacketPlayInResourcePackStatus"; break;
++                //case 0x20: packetName = "PacketPlayInAdvancementTab"; break;
++                //case 0x21: packetName = "PacketPlayInSelectTrade"; break;
++                //case 0x22: packetName = "PacketPlayInSetBeaconEffect"; break;
++                //case 0x23: packetName = "PacketPlayInHeldItemChange"; break;
++                //case 0x24: packetName = "PacketPlayInUpdateCommandBlock"; break;
++                //case 0x25: packetName = "PacketPlayInUpdateCommandBlockMinecart"; break;
++                //case 0x26: packetName = "PacketPlayInCreativeInventoryAction"; break;
++                //case 0x27: packetName = "PacketPlayInUpdateJigsawBlock"; break;
++                //case 0x28: packetName = "PacketPlayInUpdateStructureBlock"; break;
++                //case 0x29: packetName = "PacketPlayInUpdateSign"; break;
++                //case 0x2A: packetName = "PacketPlayInAnimation"; break;
++                //case 0x2B: packetName = "PacketPlayInSpecatate"; break;
++                //case 0x2C: packetName = "PacketPlayInPlayerBlockPlacement"; break;
++                //case 0x2D: packetName = "PacketPlayInUseITem"; break;
++            }
++            if (packetName != null) {
++                bungee.getLogger().log( Level.INFO, String.format("Event 0x%02X: %s", packetId, packetName) );
++            }
++            packet.buf.readerIndex(readerIndex);
++
+             con.getServer().getCh().write( packet );
+         }
+     }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java b/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java
+new file mode 100644
+index 00000000..78ddffa9
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java
+@@ -0,0 +1,7 @@
++package net.md_5.bungee.mimc;
++
++public enum Dimension {
++    OVERWORLD,
++    NETHER,
++    END;
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+new file mode 100644
+index 00000000..42f36490
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+@@ -0,0 +1,26 @@
++package net.md_5.bungee.mimc;
++
++public class MigrationRequest {
++    public final Player player;
++    public final Partition target;
++
++    public MigrationRequest(Player player, Partition target) {
++        this.player = player;
++        this.target = target;
++    }
++
++    public int hashCode() {
++        int prime = 31;
++        int result = 13 * prime + this.player.hashCode();
++        result = result * prime + this.target.hashCode();
++        return result;
++    }
++
++    @Override
++    public boolean equals(Object other) {
++        if (other == null) return false;
++        MigrationRequest otherRequest = (MigrationRequest)other;
++        return otherRequest.player == this.player
++                && otherRequest.target == this.target;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+new file mode 100644
+index 00000000..cdbca251
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+@@ -0,0 +1,41 @@
++package net.md_5.bungee.mimc;
++
++import java.util.*;
++
++public class Partition {
++    public final long MERGE_RADIUS = 2 * 32 * 16; // 2 Region files radius
++
++    public String serverName;
++    public final List<Player> players = new ArrayList<>();
++    public final boolean isSpawnPartition;
++
++    public Partition(String serverName) { this(serverName, false); }
++    public Partition(String serverName, boolean isSpawnPartition) {
++        this.serverName = serverName;
++        this.isSpawnPartition = isSpawnPartition;
++    }
++
++    public boolean isInMergeRadius(Player player) {
++        if (isSpawnPartition) {
++            if (player.location.distance(new PlayerLocation(Dimension.OVERWORLD, 0, 70, 0, 0, 0)) <= 1024) {
++                return true;
++            }
++        }
++        return players.stream().anyMatch(x -> x != player && x.location.distance(player.location) <= MERGE_RADIUS);
++    }
++
++    public String getServerName() {
++        return serverName;
++    }
++
++    public void add(Player player) {
++        this.players.add(player);
++    }
++    public void remove(Player player) {
++        this.players.remove(player);
++    }
++
++    public int size() {
++        return this.players.size();
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+new file mode 100644
+index 00000000..8328773d
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -0,0 +1,313 @@
++package net.md_5.bungee.mimc;
++
++import com.google.common.io.ByteArrayDataOutput;
++import com.google.common.io.ByteStreams;
++import io.netty.buffer.ByteBuf;
++import io.netty.buffer.Unpooled;
++import net.md_5.bungee.BungeeCord;
++import net.md_5.bungee.UserConnection;
++import net.md_5.bungee.api.Callback;
++import net.md_5.bungee.api.config.ServerInfo;
++import net.md_5.bungee.mimc.util.CopyOnWriteSet;
++import net.md_5.bungee.protocol.DefinedPacket;
++import net.md_5.bungee.protocol.PacketWrapper;
++import net.md_5.bungee.protocol.Protocol;
++
++import java.util.*;
++import java.util.logging.Level;
++
++public class PartitionManager {
++    public final static String CHANNEL_NAME = "mimc:channel";
++    private final static String SPAWN_SERVERNAME = "spawn";
++    private final BungeeCord bungeeCord;
++
++    private String worldFolder;
++    private Map<String, ServerInfo> servers = new HashMap<>();
++    private List<Partition> partitions = new ArrayList<>();
++    private List<Player> players = new ArrayList<>();
++    private CopyOnWriteSet<MigrationRequest> migrationRequests = new CopyOnWriteSet<>();
++
++    public PartitionManager(BungeeCord bungeeCord) {
++        this.bungeeCord = bungeeCord;
++    }
++
++    public void initialize(String worldFolder, Map<String, ServerInfo> servers) throws IllegalArgumentException {
++        if (this.servers.size() > 0) {
++            return;
++        }
++
++        // Required in order to receive responses from the server
++        BungeeCord.getInstance().registerChannel(CHANNEL_NAME);
++
++        this.worldFolder = worldFolder;
++        this.servers = servers;
++
++        ServerInfo spawnServer = servers.get(SPAWN_SERVERNAME);
++        if (spawnServer == null) {
++            throw new IllegalArgumentException("Expecting server to be defined with name 'spawn'.");
++        }
++
++        Partition spawnPartition = new Partition(SPAWN_SERVERNAME, true);
++        partitions.add(spawnPartition);
++    }
++
++    public Player getPlayer(String playerName) {
++        for (int i = 0; i < players.size(); i++) {
++            Player p = players.get(i);
++            if (p.name.equals(playerName)) return p;
++        }
++        return null;
++    }
++    public Player getPlayer(UUID uuid) {
++        for (int i = 0; i < players.size(); i++) {
++            Player p = players.get(i);
++            if (p.uniqueId == uuid) return p;
++        }
++        return null;
++    }
++    public Player movePlayer(UUID uuid, double x, double y, double z) {
++        Player player = getPlayer(uuid);
++        if (player != null) {
++            player.move(x, y, z);
++            migratePlayer(player);
++        }
++        return player;
++    }
++    public Player movePlayer(UUID uuid, double x, double y, double z, float yaw, float pitch) {
++        Player player = getPlayer(uuid);
++        if (player != null) {
++            player.move(x, y, z, yaw, pitch);
++            migratePlayer(player);
++        }
++        return player;
++    }
++    public Player movePlayer(UUID uuid
++            , double x, boolean xIsRelative
++            , double y, boolean yIsRelative
++            , double z, boolean zIsRelative
++            , float yaw, float pitch) {
++        Player player = getPlayer(uuid);
++        if (player != null) {
++            player.move(
++                    xIsRelative ? player.location.calculateOffsetFromX(x) : x
++                    , yIsRelative ? player.location.calculateOffsetFromY(y) : y
++                    , zIsRelative ? player.location.calculateOffsetFromZ(z) : z
++                    , yaw
++                    , pitch);
++
++            migratePlayer(player);
++        }
++        return player;
++    }
++
++    public Player addPlayer(UserConnection userCon) {
++        String name = userCon.getName();
++        UUID uniqueId = userCon.getUniqueId();
++
++        Player p = new Player(userCon, name, uniqueId);
++        PlayerLocation lastPlayerLocation = PlayerLocation.load(this.worldFolder, uniqueId.toString());
++        if (lastPlayerLocation != null) {
++            bungeeCord.getLogger().warning(String.format("MIMC | Player connected %s", p));
++            p.move(lastPlayerLocation);
++        } else {
++            bungeeCord.getLogger().warning(String.format("MIMC | New player connected %s", p));
++        }
++        Partition partition = allocateToPartition(p);
++        p.assignTo(partition);
++        players.add(p);
++        return p;
++    }
++
++    public Partition allocateToPartition(Player p) {
++        Partition partition = null;
++
++        if (p.location != null) {
++            partition = migratePlayer(p);
++        }
++        if (partition == null) {
++            // Default to spawn partition
++            return this.partitions.get(0);
++        }
++        return partition;
++    }
++
++    public void requestMerge(Partition source, Partition target) {
++        for (int i=source.players.size()-1;i>-1;i--) {
++            Player p = source.players.get(i);
++            requestMigration(p, target);
++        }
++    }
++
++    public void requestMigration(Player p, Partition target) {
++        MigrationRequest request = new MigrationRequest(p, target);
++
++        // A previous request was sent out... waiting for response from that
++        // TODO: what if we never get a response?
++        if (this.migrationRequests.contains(request)) {
++            return;
++        }
++        this.migrationRequests.add(request);
++
++        sendMigrationMessage(p, target);
++    }
++
++    public boolean completeMigration(String playerName) {
++        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
++
++        Iterator<MigrationRequest> iterator = this.migrationRequests.iterator();
++        while(iterator.hasNext()) {
++            MigrationRequest request = iterator.next();
++            Player p = request.player;
++            Partition target = request.target;
++
++            if (p.name.equals(playerName)) {
++                p.migrateTo(target);
++
++                p.userCon.connect(servers.get(target.serverName), (result, error) -> {
++                    if (result) {
++                        // Immediately close loading screen
++                        ByteArrayDataOutput out = ByteStreams.newDataOutput();
++                        out.writeByte(0x35);
++                        out.writeDouble(p.location.x);
++                        out.writeDouble(p.location.y);
++                        out.writeDouble(p.location.z);
++                        out.writeFloat(p.location.yaw);
++                        out.writeFloat(p.location.pitch);
++                        out.writeByte(0); // Flags
++                        out.writeByte(0); // Teleport ID
++                        ByteBuf buf = Unpooled.wrappedBuffer(out.toByteArray());
++                        PacketWrapper packet = new PacketWrapper( null, buf );
++                        p.userCon.sendPacket(packet);
++                    } else {
++                        String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
++                        this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
++                        p.userCon.disconnect(errorMessage);
++                    }
++                });
++
++                this.migrationRequests.remove(request);
++                return true;
++            }
++        }
++        return false;
++    }
++
++    String suggestServerForNewPartition() {
++        Map<String, Long> serverPartitionCounts = new HashMap<>();
++
++        Iterator<Map.Entry<String, ServerInfo>> iterator = this.servers.entrySet().iterator();
++        while (iterator.hasNext()) {
++            String serverName = iterator.next().getKey();
++            Long count = this.partitions.stream().filter(x -> x.getServerName().equals(serverName)).count();
++            bungeeCord.getLogger().info(String.format("Server %s has %d partitions.", serverName, count));
++            serverPartitionCounts.put(serverName, count);
++        }
++
++        // Gets the server with the least amount of partitions running on it
++        // TODO: This should be much more intelligent, like least amount of players, or least amount of load (1.0/tps?)
++        String serverWithFewestPartitions = serverPartitionCounts.entrySet().stream()
++                .min(Comparator.comparing(Map.Entry::getValue))
++                .get().getKey();
++        bungeeCord.getLogger().info(String.format("Server with fewest partitions %s", serverWithFewestPartitions));
++        return serverWithFewestPartitions;
++    }
++    Partition migratePlayer(Player p) {
++        Partition previous = p.partition;
++        Partition target;
++
++        List<Partition> partitionsInRange = new ArrayList<>();
++        List<Partition> partitionsNotInRange = new ArrayList<>();
++
++        for (int i = 0; i<this.partitions.size(); i++) {
++            Partition candidate = this.partitions.get(i);
++
++            if (candidate.isInMergeRadius(p)) {
++                partitionsInRange.add(candidate);
++            } else {
++                partitionsNotInRange.add(candidate);
++            }
++        }
++
++        if (partitionsInRange.isEmpty()) {
++            // If it is a new player, and no other partition is in range, add a new partition
++            if (previous == null) {
++                String serverName = suggestServerForNewPartition();
++                target = new Partition(serverName);
++                bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to new partition on node %s", p.location, serverName));
++                this.partitions.add(target);
++            } else {
++                // The player moved, but didn't come in merge distance of another partition
++                target = previous;
++            }
++        } else if (partitionsInRange.size() > 1) {
++            target = partitionsInRange.stream().max(Comparator.comparing(Partition::size)).get();
++
++            if (this.migrationRequests.contains(new MigrationRequest(p, target))) {
++                return target;
++            }
++
++            bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to existing partition on node %s", p.location, target.getServerName()));
++            bungeeCord.getLogger().warning(String.format("MIMC | Merging %d partitions that are in range", partitionsInRange.size()-1));
++
++            for (int i = 1; i < partitionsInRange.size(); i++) {
++                Partition partitionToBeMerged = partitionsInRange.get(i);
++                requestMerge(partitionToBeMerged, target);
++            }
++            partitionsNotInRange.add(target);
++
++            this.partitions = partitionsNotInRange;
++        } else {
++            target = partitionsInRange.get(0);
++
++            if (this.migrationRequests.contains(new MigrationRequest(p, target))) {
++                return target;
++            }
++
++            if (previous == null) {
++                // The new player is in range of a partition. Add it to that partition.
++                bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to existing partition on node %s", p.location, target.getServerName()));
++            } else if (target != previous) {
++                // The player moved away from his previous partition, and is now in range of a new partition
++                bungeeCord.getLogger().warning(String.format("MIMC | Migrating player at %s to other partition on node %s", p.location, target.getServerName()));
++                requestMigration(p, target);
++            }
++        }
++        return target;
++    }
++    void sendMigrationMessage(Player p, Partition target) {
++        ByteArrayDataOutput out = ByteStreams.newDataOutput();
++        out.writeUTF( "prepare-migration" );
++        ServerInfo sourceServer = p.userCon.getServer().getInfo();
++
++        out.writeUTF( target.serverName );
++        out.writeUTF( p.name );
++
++        sourceServer.sendData(PartitionManager.CHANNEL_NAME, out.toByteArray());
++    }
++
++    public void removePlayer(String playerName) {
++        bungeeCord.getLogger().info(String.format("MIMC | Removing player %s", playerName));
++
++        Player player = getPlayer(playerName);
++
++        // Remove player's requests
++        List<MigrationRequest> playerRequests = new ArrayList<>();
++        Iterator<MigrationRequest> iterator = this.migrationRequests.iterator();
++        while (iterator.hasNext()) {
++            MigrationRequest request = iterator.next();
++            if (request.player == player) {
++                playerRequests.add(request);
++            }
++        }
++        playerRequests.stream().forEach(req -> this.migrationRequests.remove(req));
++
++        // Remove from partitions
++        for (int i=0; i<this.partitions.size(); i++) {
++            Partition partition = this.partitions.get(i);
++            partition.remove(player);
++        }
++
++        // Remove player
++        this.players.remove(player);
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+new file mode 100644
+index 00000000..e6bf02c3
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+@@ -0,0 +1,54 @@
++package net.md_5.bungee.mimc;
++
++import net.md_5.bungee.UserConnection;
++
++import java.util.UUID;
++
++public class Player {
++    public final UserConnection userCon;
++    public final String name;
++    public final UUID uniqueId;
++    public PlayerLocation location;
++    public Partition partition;
++
++    public Player(UserConnection userCon, String name, UUID uniqueId) {
++        this.userCon = userCon;
++        this.name = name;
++        this.uniqueId = uniqueId;
++    }
++
++    public void assignTo(Partition partition) {
++        this.partition = partition;
++        partition.add(this);
++    }
++
++    public void move(PlayerLocation newLocation) {
++        this.location = newLocation;
++    }
++    public void move(double x, double y, double z) {
++        if (this.location == null) {
++            this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, 0, 0);
++        } else {
++            this.location = this.location.move(x, y, z);
++        }
++    }
++    public void move(double x, double y, double z, float yaw, float pitch) {
++        if (this.location == null) {
++            this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, yaw, pitch);
++        } else {
++            this.location = this.location.move(x, y, z, yaw, pitch);
++        }
++    }
++
++    @Override
++    public String toString() {
++        return String.format("Player %s [UniqueId:%s]", name, uniqueId);
++    }
++
++    public void migrateTo(Partition partition) {
++        Partition previous = this.partition;
++        previous.remove(this);
++        partition.add(this);
++        this.partition = partition;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+new file mode 100644
+index 00000000..eafb1619
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+@@ -0,0 +1,94 @@
++package net.md_5.bungee.mimc;
++
++import net.md_5.bungee.mimc.nbt.NbtFile;
++import net.md_5.bungee.mimc.nbt.NbtTree;
++import net.md_5.bungee.mimc.nbt.TagNodeList;
++
++import java.io.File;
++import java.io.IOException;
++
++public class PlayerLocation {
++    public final Dimension dimension;
++    public final double x;
++    public final double y;
++    public final double z;
++    public final float yaw;
++    public final float pitch;
++
++    public PlayerLocation(Dimension dimension, double x, double y, double z, float yaw, float pitch) {
++        this.dimension = dimension;
++        this.x = x;
++        this.y = y;
++        this.z = z;
++        this.yaw = yaw;
++        this.pitch = pitch;
++    }
++
++    @Override
++    public String toString() {
++        return String.format("%s (X: %.2f Y: %.2f Z: %.2f)", dimension, x, y, z);
++    }
++
++    public static PlayerLocation load(String worldFolder, String uuid) {
++        try {
++            String playerdataFile = String.format("%s/world/playerdata/%s.dat"
++                    , worldFolder.replaceAll("/+$", "")
++                    , uuid);
++            if (new File(playerdataFile).exists()) {
++                NbtFile file = new NbtFile(playerdataFile);
++                NbtTree tree = NbtTree.readFrom(file.getReader());
++                return PlayerLocation.parse(tree);
++            }
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
++        return null;
++    }
++
++    public static PlayerLocation parse(NbtTree playerData) {
++        Dimension dimension = parseDimension(playerData);
++        TagNodeList pos = playerData.root.getList("Pos");
++        TagNodeList rotation = playerData.root.getList("Rotation");
++        return new PlayerLocation(
++                dimension,
++                pos.getDouble(0).value,
++                pos.getDouble(1).value,
++                pos.getDouble(2).value,
++                rotation.getFloat(0).value,
++                rotation.getFloat(1).value
++        );
++    }
++    static Dimension parseDimension(NbtTree playerData) {
++        switch (playerData.root.getInteger("Dimension").value) {
++            case -1:
++                return Dimension.NETHER;
++            case 0:
++                return Dimension.OVERWORLD;
++            case 1:
++                return Dimension.END;
++        }
++        return null;
++    }
++
++    public PlayerLocation move(double x, double y, double z, float yaw, float pitch) {
++        return new PlayerLocation(this.dimension, x, y, z, yaw, pitch);
++    }
++    public PlayerLocation move(double x, double y, double z) {
++        return new PlayerLocation(this.dimension, x, y, z, this.yaw, this.pitch);
++    }
++    public double calculateOffsetFromX(double x) {
++        return this.x + x;
++    }
++    public double calculateOffsetFromY(double y) {
++        return this.y + y;
++    }
++    public double calculateOffsetFromZ(double z) {
++        return this.z + z;
++    }
++
++    public double distance(PlayerLocation other) {
++        double dx = x - other.x;
++        double dy = y - other.y;
++        return Math.sqrt(dx*dx+dy*dy);
++    }
++}
+\ No newline at end of file
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java
+new file mode 100644
+index 00000000..feb44f95
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtByteReader.java
+@@ -0,0 +1,56 @@
++package net.md_5.bungee.mimc.nbt;
++
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
++import java.nio.charset.Charset;
++
++public class NbtByteReader {
++    private final ByteBuffer bb;
++
++    public NbtByteReader(byte[] bytes) {
++        this(bytes, ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN));
++    }
++    public NbtByteReader(byte[] bytes, boolean isLittleEndian) {
++        this.bb = ByteBuffer.wrap(bytes);
++        this.bb.order(isLittleEndian ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN);
++    }
++
++    public byte readByte() {
++        return this.bb.get();
++    }
++
++    public int read(byte[] bytes) {
++        this.bb.get(bytes);
++        return bytes.length;
++    }
++
++    public short readShort() {
++        return this.bb.getShort();
++    }
++
++    public int readInt() {
++        return this.bb.getInt();
++    }
++
++    public long readLong() {
++        return this.bb.getLong();
++    }
++
++    public float readFloat() {
++        return this.bb.getFloat();
++    }
++
++    public double readDouble() {
++        return this.bb.getDouble();
++    }
++
++    public String readString(int len, Charset charset) {
++        byte[] bytes = new byte[len];
++        this.bb.get(bytes);
++        return new String(bytes, charset);
++    }
++
++    public int available() {
++        return this.bb.remaining();
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java
+new file mode 100644
+index 00000000..22f359ae
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtFile.java
+@@ -0,0 +1,49 @@
++package net.md_5.bungee.mimc.nbt;
++
++import net.md_5.bungee.mimc.PlayerLocation;
++
++import java.io.*;
++import java.util.zip.GZIPInputStream;
++
++public class NbtFile {
++    private String fileName;
++
++    public NbtFile(String fileName) {
++        this.fileName = fileName;
++    }
++
++    public NbtByteReader getReader() {
++        try {
++            InputStream inputStream = new FileInputStream(this.fileName);
++            GZIPInputStream gzipInputStream = new GZIPInputStream(inputStream);
++            byte[] bytes = readBytes(gzipInputStream);
++            gzipInputStream.close();
++            inputStream.close();
++            return new NbtByteReader(bytes, false);
++        } catch (Exception e) {
++            e.printStackTrace();
++            return null;
++        }
++    }
++
++    public static byte[] readBytes(InputStream inputStream) throws IOException {
++        byte[] b = new byte[1024];
++        ByteArrayOutputStream os = new ByteArrayOutputStream();
++        int c;
++        while ((c = inputStream.read(b)) != -1) {
++            os.write(b, 0, c);
++        }
++        return os.toByteArray();
++    }
++
++    public static void main(String[] args) {
++        NbtFile file = new NbtFile("P:\\vanilla\\Paper\\work\\test-server\\world\\playerdata\\55e94550-f0b0-3d5e-a616-931da896dcde.dat");
++        try {
++            NbtTree tree = NbtTree.readFrom(file.getReader());
++            PlayerLocation info = PlayerLocation.parse(tree);
++            System.out.println(info);
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java
+new file mode 100644
+index 00000000..2f33f09e
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/NbtTree.java
+@@ -0,0 +1,173 @@
++package net.md_5.bungee.mimc.nbt;
++
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++
++public class NbtTree {
++    public final TagNodeCompound root;
++    public final String rootName;
++
++    public NbtTree(String rootName, TagNodeCompound root) {
++        this.rootName = rootName;
++        this.root = root;
++    }
++
++    public static NbtTree readFrom(NbtByteReader reader) throws IOException {
++        TagType type = readTagType(reader);
++        if (type == null || !type.equals(TagType.TAG_COMPOUND)) {
++            return null;
++        }
++        String rootName = readString(reader).value;
++        return new NbtTree(rootName, readCompound(reader));
++    }
++
++    static TagType readTagType(NbtByteReader reader) throws IOException {
++        byte b = reader.readByte();
++        TagType[] types = TagType.values();
++        for (int i = 0; i < types.length; i++) {
++            TagType type = types[i];
++            if (type.value == b) return type;
++        }
++        return null;
++    }
++    static TagNodeCompound readCompound(NbtByteReader reader) throws IOException {
++        TagNodeCompound val = new TagNodeCompound();
++        while (readTag(reader, val)) ;
++        return val;
++    }
++    static boolean readTag(NbtByteReader reader, TagNodeCompound parent) throws IOException {
++        TagType type = readTagType(reader);
++        if (type != TagType.TAG_END) {
++            String name = readString(reader).value;
++            parent.set(name, readValue(type, reader));
++            return true;
++        }
++        return false;
++    }
++    static TagNode readValue(TagType type, NbtByteReader reader) throws IOException {
++        switch (type) {
++            case TAG_END:
++                return null;
++
++            case TAG_BYTE:
++                return readByte(reader);
++
++            case TAG_SHORT:
++                return readShort(reader);
++
++            case TAG_INT:
++                return readInt(reader);
++
++            case TAG_LONG:
++                return readLong(reader);
++
++            case TAG_FLOAT:
++                return readFloat(reader);
++
++            case TAG_DOUBLE:
++                return readDouble(reader);
++
++            case TAG_BYTE_ARRAY:
++                return readByteArray(reader);
++
++            case TAG_STRING:
++                return readString(reader);
++
++            case TAG_LIST:
++                return readList(reader);
++
++            case TAG_COMPOUND:
++                return readCompound(reader);
++
++            case TAG_INT_ARRAY:
++                return readIntArray(reader);
++
++            case TAG_LONG_ARRAY:
++                return readLongArray(reader);
++
++            case TAG_SHORT_ARRAY:
++                return readShortArray(reader);
++        }
++
++        throw new IOException("Unknown tag type " + type);
++    }
++    static TagNodeString readString(NbtByteReader reader) throws IOException {
++        short len = reader.readShort();
++        if (len < 0) {
++            throw new IOException("Negative length string");
++        }
++        return new TagNodeString(reader.readString(len, StandardCharsets.UTF_8));
++    }
++    static TagNodeByte readByte(NbtByteReader reader) throws IOException {
++        return new TagNodeByte(reader.readByte());
++    }
++    static TagNodeShort readShort(NbtByteReader reader) throws IOException {
++        return new TagNodeShort(reader.readShort());
++    }
++    static TagNodeInteger readInt(NbtByteReader reader) throws IOException {
++        return new TagNodeInteger(reader.readInt());
++    }
++    static TagNodeLong readLong(NbtByteReader reader) throws IOException {
++        return new TagNodeLong(reader.readLong());
++    }
++    static TagNodeFloat readFloat(NbtByteReader reader) throws IOException {
++        return new TagNodeFloat(reader.readFloat());
++    }
++    static TagNodeDouble readDouble(NbtByteReader reader) throws IOException {
++        return new TagNodeDouble(reader.readDouble());
++    }
++    static TagNodeByteArray readByteArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
++        if (len < 0) {
++            throw new IOException("Negative length string");
++        }
++        byte[] bytes = new byte[len];
++        reader.read(bytes);
++        return new TagNodeByteArray(bytes);
++    }
++    static TagNodeIntegerArray readIntArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
++        if (len < 0) {
++            throw new IOException("Negative length string");
++        }
++        int[] values = new int[len];
++        for (int i=0; i<len; i++) {
++            values[i] = reader.readInt();
++        }
++        return new TagNodeIntegerArray(values);
++    }
++    static TagNodeShortArray readShortArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
++        if (len < 0) {
++            throw new IOException("Negative length string");
++        }
++        short[] values = new short[len];
++        for (int i=0; i<len; i++) {
++            values[i] = reader.readShort();
++        }
++        return new TagNodeShortArray(values);
++    }
++    static TagNodeLongArray readLongArray(NbtByteReader reader) throws IOException {
++        int len = reader.readInt();
++        if (len < 0) {
++            throw new IOException("Negative length string");
++        }
++        long[] values = new long[len];
++        for (int i=0; i<len; i++) {
++            values[i] = reader.readLong();
++        }
++        return new TagNodeLongArray(values);
++    }
++    static TagNodeList readList(NbtByteReader reader) throws IOException {
++        TagType type = readTagType(reader);
++        int len = reader.readInt();
++        if (type == TagType.TAG_END) {
++            return new TagNodeList(TagType.TAG_BYTE);
++        }
++        TagNodeList list = new TagNodeList(type);
++        for (int i=0;i<len;i++) {
++            list.nodes.add(readValue(type, reader));
++        }
++        return list;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNode.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNode.java
+new file mode 100644
+index 00000000..578b2e51
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNode.java
+@@ -0,0 +1,5 @@
++package net.md_5.bungee.mimc.nbt;
++
++public abstract class TagNode {
++
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByte.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByte.java
+new file mode 100644
+index 00000000..09156494
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByte.java
+@@ -0,0 +1,9 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeByte extends TagNode {
++    public final byte value;
++
++    public TagNodeByte(byte value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByteArray.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByteArray.java
+new file mode 100644
+index 00000000..bfad02e6
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeByteArray.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeByteArray extends TagNode {
++    public final byte[] values;
++    public TagNodeByteArray(byte[] values) {
++        this.values = values;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeCompound.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeCompound.java
+new file mode 100644
+index 00000000..f1584558
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeCompound.java
+@@ -0,0 +1,47 @@
++package net.md_5.bungee.mimc.nbt;
++
++import java.util.HashMap;
++import java.util.Map;
++
++public class TagNodeCompound extends TagNode {
++    Map<String, TagNode> items = new HashMap<>();
++
++    public TagNode get(String key) {
++        return items.get(key);
++    }
++
++    public void set(String key, TagNode node) {
++        items.put(key, node);
++    }
++
++    public TagNodeString getString(String key) {
++        return (TagNodeString)get(key);
++    }
++    public TagNodeByte getByte(String key) {
++        return (TagNodeByte)get(key);
++    }
++    public TagNodeInteger getInteger(String key) {
++        return (TagNodeInteger)get(key);
++    }
++    public TagNodeShort getShort(String key) {
++        return (TagNodeShort)get(key);
++    }
++    public TagNodeLong getLong(String key) {
++        return (TagNodeLong)get(key);
++    }
++    public TagNodeFloat getFloat(String key) {
++        return (TagNodeFloat)get(key);
++    }
++    public TagNodeDouble getDouble(String key) {
++        return (TagNodeDouble)get(key);
++    }
++    public TagNodeByteArray getByteArray(String key) {
++        return (TagNodeByteArray)get(key);
++    }
++    public TagNodeList getList(String key) {
++        return (TagNodeList)get(key);
++    }
++    public TagNodeCompound getCompound(String key) {
++        return (TagNodeCompound)get(key);
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeDouble.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeDouble.java
+new file mode 100644
+index 00000000..ed767696
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeDouble.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeDouble extends TagNode {
++    public final double value;
++    public TagNodeDouble(double value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeFloat.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeFloat.java
+new file mode 100644
+index 00000000..ee2162db
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeFloat.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeFloat extends TagNode {
++    public final float value;
++    public TagNodeFloat(float value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeInteger.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeInteger.java
+new file mode 100644
+index 00000000..385faa9a
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeInteger.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeInteger extends TagNode {
++    public final int value;
++    public TagNodeInteger(int value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeIntegerArray.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeIntegerArray.java
+new file mode 100644
+index 00000000..4a212cc1
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeIntegerArray.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeIntegerArray extends TagNode {
++    public final int[] values;
++    public TagNodeIntegerArray(int[] values) {
++        this.values = values;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeList.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeList.java
+new file mode 100644
+index 00000000..5747be64
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeList.java
+@@ -0,0 +1,45 @@
++package net.md_5.bungee.mimc.nbt;
++
++import java.util.ArrayList;
++import java.util.List;
++
++public class TagNodeList extends TagNode {
++    public final TagType type;
++    public final List<TagNode> nodes;
++
++    public TagNodeList(TagType type) {
++        this.type = type;
++        this.nodes = new ArrayList<>();
++    }
++
++    public TagNode get(Integer i) {
++        return nodes.get(i);
++    }
++    public TagNodeString getString(Integer i) {
++        return (TagNodeString)get(i);
++    }
++    public TagNodeByte getByte(Integer i) {
++        return (TagNodeByte)get(i);
++    }
++    public TagNodeInteger getInteger(Integer i) {
++        return (TagNodeInteger)get(i);
++    }
++    public TagNodeShort getShort(Integer i) {
++        return (TagNodeShort)get(i);
++    }
++    public TagNodeLong getLong(Integer i) {
++        return (TagNodeLong)get(i);
++    }
++    public TagNodeFloat getFloat(Integer i) {
++        return (TagNodeFloat)get(i);
++    }
++    public TagNodeDouble getDouble(Integer i) {
++        return (TagNodeDouble)get(i);
++    }
++    public TagNodeByteArray getByteArray(Integer i) {
++        return (TagNodeByteArray)get(i);
++    }
++    public TagNodeList getList(Integer i) {
++        return (TagNodeList)get(i);
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLong.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLong.java
+new file mode 100644
+index 00000000..5b3e71c0
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLong.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeLong extends TagNode {
++    public final long value;
++    public TagNodeLong(long value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLongArray.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLongArray.java
+new file mode 100644
+index 00000000..648427a9
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeLongArray.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeLongArray extends TagNode {
++    public final long[] values;
++    public TagNodeLongArray(long[] values) {
++        this.values = values;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShort.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShort.java
+new file mode 100644
+index 00000000..15f7f533
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShort.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeShort extends TagNode {
++    public final short value;
++    public TagNodeShort(short value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShortArray.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShortArray.java
+new file mode 100644
+index 00000000..c3d55380
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeShortArray.java
+@@ -0,0 +1,8 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeShortArray extends TagNode {
++    public final short[] values;
++    public TagNodeShortArray(short[] values) {
++        this.values = values;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeString.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeString.java
+new file mode 100644
+index 00000000..d753138f
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagNodeString.java
+@@ -0,0 +1,9 @@
++package net.md_5.bungee.mimc.nbt;
++
++public class TagNodeString extends TagNode {
++    public final String value;
++
++    public TagNodeString(String value) {
++        this.value = value;
++    }
++}
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagType.java b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagType.java
+new file mode 100644
+index 00000000..8697d60b
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/nbt/TagType.java
+@@ -0,0 +1,83 @@
++package net.md_5.bungee.mimc.nbt;
++
++/// <summary>
++/// Defines the type of an NBT tag.
++/// </summary>
++public enum TagType
++{
++    /// <summary>
++    /// A null tag, used to terminate lists.
++    /// </summary>
++    TAG_END(0),
++
++    /// <summary>
++    /// A tag containing an 8-bit signed integer.
++    /// </summary>
++    TAG_BYTE(1),
++
++    /// <summary>
++    /// A tag containing a 16-bit signed integer.
++    /// </summary>
++    TAG_SHORT(2),
++
++    /// <summary>
++    /// A tag containing a 32-bit signed integer.
++    /// </summary>
++    TAG_INT(3),
++
++    /// <summary>
++    /// A tag containing a 64-bit signed integer.
++    /// </summary>
++    TAG_LONG(4),
++
++    /// <summary>
++    /// A tag containing a 32-bit (single precision) floating-point value.
++    /// </summary>
++    TAG_FLOAT(5),
++
++    /// <summary>
++    /// A tag containing a 64-bit (double precision) floating-point value.
++    /// </summary>
++    TAG_DOUBLE(6),
++
++    /// <summary>
++    /// A tag containing an array of unsigned 8-bit byte values.
++    /// </summary>
++    TAG_BYTE_ARRAY(7),
++
++    /// <summary>
++    /// A tag containing a string of text.
++    /// </summary>
++    TAG_STRING(8),
++
++    /// <summary>
++    /// A tag containing a sequential list of tags, where all tags of of the same type.
++    /// </summary>
++    TAG_LIST(9),
++
++    /// <summary>
++    /// A tag containing a key-value store of tags, where each tag can be of any type.
++    /// </summary>
++    TAG_COMPOUND(10),
++
++    /// <summary>
++    /// A tag containing an array of signed 32-bit values.
++    /// </summary>
++    TAG_INT_ARRAY(11),
++
++    /// <summary>
++    /// A tag containing an array of signed 64-bit values.
++    /// </summary>
++    TAG_LONG_ARRAY(12),
++
++    /// <summary>
++    /// A tag containing an array of signed 16-bit values.  NON-STANDARD NBT.
++    /// <remarks>This tag is included to support modded Minecraft and in anticipation that it may become standard in the future.</remarks>
++    /// </summary>
++    TAG_SHORT_ARRAY(13);
++
++    TagType(int value) {
++        this.value = (byte)value;
++    }
++    public final byte value;
++}
+\ No newline at end of file
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/util/CopyOnWriteSet.java b/proxy/src/main/java/net/md_5/bungee/mimc/util/CopyOnWriteSet.java
+new file mode 100644
+index 00000000..588fa87e
+--- /dev/null
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/util/CopyOnWriteSet.java
+@@ -0,0 +1,56 @@
++package net.md_5.bungee.mimc.util;
++
++import java.util.Collection;
++import java.util.HashSet;
++import java.util.Iterator;
++import java.util.Set;
++import java.util.concurrent.atomic.AtomicReference;
++
++public class CopyOnWriteSet<E> {
++
++    private final AtomicReference<Set<E>> ref;
++
++    public CopyOnWriteSet( ) {
++        ref = new AtomicReference<Set<E>>( new HashSet<E>() );
++    }
++    public CopyOnWriteSet( Collection<? extends E> c ) {
++        ref = new AtomicReference<Set<E>>( new HashSet<E>( c ) );
++    }
++
++    public boolean contains( Object o ) {
++        return ref.get().contains( o );
++    }
++
++    public Iterator<E> iterator() {
++        return ref.get().iterator();
++    }
++
++    public boolean add( E e ) {
++        while ( true ) {
++            Set<E> current = ref.get();
++            if ( current.contains( e ) ) {
++                return false;
++            }
++            Set<E> modified = new HashSet<E>( current );
++            modified.add( e );
++            if ( ref.compareAndSet( current, modified ) ) {
++                return true;
++            }
++        }
++    }
++
++    public boolean remove( Object o ) {
++        while ( true ) {
++            Set<E> current = ref.get();
++            if ( !current.contains( o ) ) {
++                return false;
++            }
++            Set<E> modified = new HashSet<E>( current );
++            modified.remove( o );
++            if ( ref.compareAndSet( current, modified ) ) {
++                return true;
++            }
++        }
++    }
++
++}
