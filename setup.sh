@@ -47,7 +47,7 @@ for patch in ../../paper-patches/*.patch; do git apply $patch; done
 cd ..
 
 echo "Applying paper-api-patches"
-cd Paper-Api
+cd Paper-API
 for patch in ../../paper-api-patches/*.patch; do git apply $patch; done
 cd ..
 
@@ -63,7 +63,7 @@ git clone https://github.com/PaperMC/Waterfall.git
 
 echo "MIMC | Building..."
 echo ""
-cd waterfall
+cd Waterfall
 ./waterfall build
 
 echo "Applying waterfall-patches"
