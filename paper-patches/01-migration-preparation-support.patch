@@ -1,3 +1,22 @@
+diff --git a/pom.xml b/pom.xml
+index beda5dc8..e719fe93 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -256,10 +256,10 @@
+                                         <exclude>org.bukkit.craftbukkit.Main*</exclude>
+                                     </excludes>
+                                 </relocation>
+-                                <relocation>
+-                                    <pattern>net.minecraft.server</pattern>
+-                                    <shadedPattern>net.minecraft.server.v${minecraft_version}</shadedPattern>
+-                                </relocation>
++<!--                                <relocation>-->
++<!--                                    <pattern>net.minecraft.server</pattern>-->
++<!--                                    <shadedPattern>net.minecraft.server.v${minecraft_version}</shadedPattern>-->
++<!--                                </relocation>-->
+                             </relocations>
+                             <transformers>
+                                 <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
 diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
 index 6eef4592..ad98a18b 100644
 --- a/src/main/java/net/minecraft/server/MinecraftServer.java
@@ -65,8 +84,38 @@ index e7b8b2e9..f36ae899 100644
          this.player.playerConnection.sendPacket(new PacketPlayOutPosition(d0 - d3, d1 - d4, d2 - d5, f - f2, f1 - f3, set, this.teleportAwait));
      }
  
+diff --git a/src/main/java/net/minecraft/server/RegionFileCache.java b/src/main/java/net/minecraft/server/RegionFileCache.java
+index d2b32894..c32e08af 100644
+--- a/src/main/java/net/minecraft/server/RegionFileCache.java
++++ b/src/main/java/net/minecraft/server/RegionFileCache.java
+@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
+ import com.destroystokyo.paper.PaperConfig; // Paper
+ 
+ import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.io.LoggerReader;
+ 
+ public abstract class RegionFileCache implements AutoCloseable {
+ 
+@@ -61,6 +62,9 @@ public abstract class RegionFileCache implements AutoCloseable {
+         if (regionfile != null) {
+             return regionfile;
+         } else {
++            String fileName = "r." + chunkcoordintpair.getRegionX() + "." + chunkcoordintpair.getRegionZ() + ".mca";
++            MinecraftServer.LOGGER.warn(String.format("Loading %s", fileName) );
++
+             if (this.cache.size() >= PaperConfig.regionFileCacheSize) { // Paper - configurable
+                 ((RegionFile) this.cache.removeLast()).close();
+             }
+@@ -70,6 +74,7 @@ public abstract class RegionFileCache implements AutoCloseable {
+             }
+ 
+             copyIfNeeded(chunkcoordintpair.x, chunkcoordintpair.z); // Paper
++
+             File file = new File(this.a, "r." + chunkcoordintpair.getRegionX() + "." + chunkcoordintpair.getRegionZ() + ".mca");
+             if (existingOnly && !file.exists()) return null; // CraftBukkit
+             RegionFile regionfile1 = new RegionFile(file);
 diff --git a/src/main/java/net/minecraft/server/WorldNBTStorage.java b/src/main/java/net/minecraft/server/WorldNBTStorage.java
-index 551376ff..1eb5a4d3 100644
+index eaae4468..1eb5a4d3 100644
 --- a/src/main/java/net/minecraft/server/WorldNBTStorage.java
 +++ b/src/main/java/net/minecraft/server/WorldNBTStorage.java
 @@ -105,6 +105,12 @@ public class WorldNBTStorage implements IPlayerFileData {
@@ -82,6 +131,46 @@ index 551376ff..1eb5a4d3 100644
              File file = new File(this.baseDir, "level.dat_new");
              File file1 = new File(this.baseDir, "level.dat_old");
              File file2 = new File(this.baseDir, "level.dat");
+@@ -151,21 +157,24 @@ public class WorldNBTStorage implements IPlayerFileData {
+     }
+ 
+     public void checkSession() throws ExceptionWorldConflict {
+-        try {
+-            File file = new File(this.baseDir, "session.lock");
+-            DataInputStream datainputstream = new DataInputStream(new FileInputStream(file));
+-
+-            try {
+-                if (datainputstream.readLong() != this.sessionId) {
+-                    throw new ExceptionWorldConflict("The save for world located at " + this.baseDir + " is being accessed from another location, aborting");  // Spigot
+-                }
+-            } finally {
+-                datainputstream.close();
+-            }
+-
+-        } catch (IOException ioexception) {
+-            throw new ExceptionWorldConflict("Failed to check session lock for world located at " + this.baseDir + ", aborting. Stop the server and delete the session.lock in this world to prevent further issues."); // Spigot
+-        }
++        // MIMC: Disable this check to enable multiple instances dealing with the same world concurrently
++        return;
++
++//        try {
++//            File file = new File(this.baseDir, "session.lock");
++//            DataInputStream datainputstream = new DataInputStream(new FileInputStream(file));
++//
++//            try {
++//                if (datainputstream.readLong() != this.sessionId) {
++//                    throw new ExceptionWorldConflict("The save for world located at " + this.baseDir + " is being accessed from another location, aborting");  // Spigot
++//                }
++//            } finally {
++//                datainputstream.close();
++//            }
++//
++//        } catch (IOException ioexception) {
++//            throw new ExceptionWorldConflict("Failed to check session lock for world located at " + this.baseDir + ", aborting. Stop the server and delete the session.lock in this world to prevent further issues."); // Spigot
++//        }
+     }
+ 
+     @Nullable
 diff --git a/src/main/java/net/minecraft/server/WorldServer.java b/src/main/java/net/minecraft/server/WorldServer.java
 index 451ad4f3..a43e0b63 100644
 --- a/src/main/java/net/minecraft/server/WorldServer.java

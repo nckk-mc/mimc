@@ -37,6 +37,7 @@ sed -i 's/keep-spawn-loaded: true/keep-spawn-loaded: false/g' paper.yml
 sed -i 's/bungeecord: false/bungeecord: true/g' spigot.yml
 
 rm plugins/Essentials*.jar
+rm plugins/Multiverse*.jar # this loads spawn even though keep-spawn-loaded is set to false
 
 cd ../..
 

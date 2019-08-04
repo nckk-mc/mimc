@@ -6,8 +6,9 @@
 - We lose all player <-> Partition <-> Server instance information
 - Do we want to persist this?
 
-### What if a user disconnects?
-- Prune partitions if necessary
+### Every world seems to load the spawn chunk, no matter if keep-spawn-loaded is true or not
+- MultiverseCore plugin should be disabled as this loads spawn irrespective of the flag
+- When the first player connects World.getSpawn() is always retrieved, even if we don't need to select a new spawnspot ( See EntityPlayer.a(WorldServer) )
 
 ## Don't forget
 ### Players can still do /server
