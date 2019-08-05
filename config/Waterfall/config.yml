@@ -1,0 +1,52 @@
+forge_support: true
+connection_throttle_limit: 3
+world_folder: ../../Paper/work/test-server/
+timeout: 30000
+online_mode: true
+log_commands: false
+listeners:
+- query_port: 25577
+  motd: '&1Another Bungee server'
+  tab_list: GLOBAL_PING
+  query_enabled: false
+  proxy_protocol: false
+  forced_hosts:
+    pvp.md-5.net: pvp
+  ping_passthrough: false
+  priorities:
+  - spawn
+  bind_local_address: true
+  host: 0.0.0.0:25577
+  max_players: 10000
+  tab_size: 60
+  force_default_server: false
+connection_throttle: 4000
+groups:
+  md_5:
+  - admin
+log_pings: true
+player_limit: -1
+prevent_proxy_connections: false
+network_compression_threshold: 256
+permissions:
+  default:
+  - bungeecord.command.server
+  - bungeecord.command.list
+  admin:
+  - bungeecord.command.alert
+  - bungeecord.command.end
+  - bungeecord.command.ip
+  - bungeecord.command.reload
+ip_forward: true
+stats: e254d5c8-de20-4e7b-88d0-89f18415783d
+servers:
+  spawn:
+    motd: '&1Spawn node'
+    address: localhost:25565
+    restricted: false
+  child:
+    motd: Child node
+    address: localhost:25566
+    restricted: false
+disabled_commands:
+- disabledcommandhere

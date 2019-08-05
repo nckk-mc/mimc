@@ -1,4 +1,6 @@
 out/
 Paper/
 Waterfall/
+!config/Paper/
+!config/Waterfall/
 workspace.xml
