@@ -31,7 +31,7 @@ cd ../../Paper
 echo "MIMC | Copying over Paper configuration defaults..."
 echo ""
 mkdir -p work/test-server/plugins
-cp ../paper-plugins/info/info-1.0-SNAPSHOT.jar work/test-server/plugins/
+cp ../paper-plugins/info/target/info-1.0-SNAPSHOT.jar work/test-server/plugins/
 cp ../paper-plugins/migrate/mimc.migrate.jar work/test-server/plugins/
 cp ../config/Paper/* work/test-server/
 
