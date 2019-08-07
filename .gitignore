@@ -4,3 +4,5 @@ Waterfall/
 !config/Paper/
 !config/Waterfall/
 workspace.xml
+paper-plugins/info/target
+.idea
