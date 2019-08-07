@@ -29,7 +29,7 @@ public class Info extends JavaPlugin
                 out.writeUTF("tps-report");
                 out.writeDouble(Bukkit.getServer().getTPS()[0]);
 
-                getLogger().warning("Sending DATA");
+                getLogger().warning("Sending TPS");
 
                 Bukkit.getServer().sendPluginMessage(Info.id, CHANNEL_NAME, out.toByteArray());
             }
