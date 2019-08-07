@@ -1,0 +1,159 @@
+From b0a36b2a62bd36d9ba549f13e8350dc6a9cacd53 Mon Sep 17 00:00:00 2001
+From: Joss Bird <admin@plasam.xyz>
+Date: Wed, 7 Aug 2019 23:21:44 +0100
+Subject: [PATCH] added tps reporting
+
+
+diff --git a/api/src/main/java/net/md_5/bungee/api/event/PluginMessageEvent.java b/api/src/main/java/net/md_5/bungee/api/event/PluginMessageEvent.java
+index a5bb3ebb..a2c4be23 100644
+--- a/api/src/main/java/net/md_5/bungee/api/event/PluginMessageEvent.java
++++ b/api/src/main/java/net/md_5/bungee/api/event/PluginMessageEvent.java
+@@ -22,11 +22,11 @@ public class PluginMessageEvent extends TargetedEvent implements Cancellable
+     /**
+      * Tag specified for this plugin message.
+      */
+-    private final String tag;
++    public final String tag;
+     /**
+      * Data contained in this plugin message.
+      */
+-    private final byte[] data;
++    public final byte[] data;
+ 
+     public PluginMessageEvent(Connection sender, Connection receiver, String tag, byte[] data)
+     {
+diff --git a/api/src/main/java/net/md_5/bungee/api/event/TargetedEvent.java b/api/src/main/java/net/md_5/bungee/api/event/TargetedEvent.java
+index 5366d73b..91a8c1cb 100644
+--- a/api/src/main/java/net/md_5/bungee/api/event/TargetedEvent.java
++++ b/api/src/main/java/net/md_5/bungee/api/event/TargetedEvent.java
+@@ -18,7 +18,7 @@ public abstract class TargetedEvent extends Event
+     /**
+      * Creator of the action.
+      */
+-    private final Connection sender;
++    public final Connection sender;
+     /**
+      * Receiver of the action.
+      */
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 959173be..f23052cb 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -1,28 +1,29 @@
+ package net.md_5.bungee.mimc;
+ 
++import com.google.common.io.ByteArrayDataInput;
+ import com.google.common.io.ByteArrayDataOutput;
+ import com.google.common.io.ByteStreams;
+-import io.netty.buffer.ByteBuf;
+-import io.netty.buffer.Unpooled;
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+-import net.md_5.bungee.api.Callback;
+ import net.md_5.bungee.api.config.ServerInfo;
++import net.md_5.bungee.api.event.PluginMessageEvent;
++import net.md_5.bungee.api.plugin.Listener;
++import net.md_5.bungee.api.plugin.Plugin;
++import net.md_5.bungee.event.EventHandler;
+ import net.md_5.bungee.mimc.util.CopyOnWriteSet;
+-import net.md_5.bungee.protocol.DefinedPacket;
+-import net.md_5.bungee.protocol.PacketWrapper;
+-import net.md_5.bungee.protocol.Protocol;
+ 
+ import java.util.*;
+ import java.util.logging.Level;
+ 
+-public class PartitionManager {
++public class PartitionManager implements Listener {
+     public final static String CHANNEL_NAME = "mimc:channel";
+     private final static String SPAWN_SERVERNAME = "spawn";
+     private final BungeeCord bungeeCord;
+ 
+     private String worldFolder;
+     private Map<String, ServerInfo> servers = new HashMap<>();
++    private Map<Integer, String> serverPortMap = new HashMap<>();
++    private Map<String, Double> serverTPSMap = new HashMap<>();
+     private List<Partition> partitions = new ArrayList<>();
+     private List<Player> players = new ArrayList<>();
+     private CopyOnWriteSet<MigrationRequest> migrationRequests = new CopyOnWriteSet<>();
+@@ -38,6 +39,7 @@ public class PartitionManager {
+ 
+         // Required in order to receive responses from the server
+         BungeeCord.getInstance().registerChannel(CHANNEL_NAME);
++        BungeeCord.getInstance().getPluginManager().registerListener(new Plugin(), this);
+ 
+         this.worldFolder = worldFolder;
+         this.servers = servers;
+@@ -47,6 +49,11 @@ public class PartitionManager {
+             throw new IllegalArgumentException("Expecting server to be defined with name 'spawn'.");
+         }
+ 
++        servers.forEach((name, serverInfo) -> {
++            this.serverPortMap.put(serverInfo.getAddress().getPort(), name);
++            this.serverTPSMap.put(name, -1d);
++        });
++
+         Partition spawnPartition = new Partition(SPAWN_SERVERNAME, true);
+         partitions.add(spawnPartition);
+     }
+@@ -209,11 +216,26 @@ public class PartitionManager {
+         }
+ 
+         // Gets the server with the least amount of players running on it
+-        String serverWithFewestPartitions = serverPartitionCounts.entrySet().stream()
++        Map.Entry<String, Long> serverWithFewestPartitions = serverPartitionCounts.entrySet().stream()
+                 .min(Comparator.comparing(Map.Entry::getValue))
++                .get();
++
++        // Gets the server with the highest TPS
++        String serverWithHighestTPS = this.serverTPSMap.entrySet().stream()
++                .max(Comparator.comparing(Map.Entry::getValue))
+                 .get().getKey();
+-        bungeeCord.getLogger().info(String.format("Server with fewest players %s", serverWithFewestPartitions));
+-        return serverWithFewestPartitions;
++
++        bungeeCord.getLogger().info(String.format("Server with fewest players %s", serverWithFewestPartitions.getKey()));
++        bungeeCord.getLogger().info(String.format("Server with highest TPS %s", serverWithHighestTPS));
++
++        if(serverWithFewestPartitions.getValue() == 0)
++        {
++            return serverWithFewestPartitions.getKey();
++        }
++        else
++        {
++            return serverWithHighestTPS;
++        }
+     }
+     Partition migratePlayer(Player p) {
+         Partition previous = p.partition;
+@@ -314,4 +336,27 @@ public class PartitionManager {
+         // Remove player
+         this.players.remove(player);
+     }
++
++    @EventHandler
++    public void onPluginMessage(PluginMessageEvent event)
++    {
++        if(!event.tag.equalsIgnoreCase(CHANNEL_NAME))
++        {
++            return;
++        }
++
++        ByteArrayDataInput in = ByteStreams.newDataInput(event.data);
++        String subChannel = in.readUTF();
++
++        if(subChannel.equalsIgnoreCase("tps-report"))
++        {
++            int port = event.sender.getAddress().getPort();
++            double TPS = in.readDouble();
++
++            String serverName = this.serverPortMap.get(port);
++
++            this.serverTPSMap.replace(serverName, TPS);
++            BungeeCord.getInstance().getLogger().warning("MIMC | " + TPS + " TPS on " + serverName);
++        }
++    }
+ }
+-- 
+2.17.1
+
