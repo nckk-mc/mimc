@@ -33,6 +33,11 @@ echo ""
 mkdir -p work/test-server/plugins
 cp ../paper-plugins/info/target/info-1.0-SNAPSHOT.jar work/test-server/plugins/
 cp ../paper-plugins/migrate/mimc.migrate.jar work/test-server/plugins/
+cp ../paper-plugins/btlp/BTLPPaper.jar work/test-server/plugins/
+
+cp ../waterfall-plugins/BTLPBungee.jar ../Waterfall/work/plugins/
+cp ../waterfall-plugins/MIMCBungee.jar ../Waterfall/work/plugins/
+
 cp ../config/Paper/* work/test-server/
 
 echo "MIMC | Applying paper-patches"
