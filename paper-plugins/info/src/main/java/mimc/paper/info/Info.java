@@ -6,9 +6,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 
-public class Info extends JavaPlugin
-{
+public class Info extends JavaPlugin implements Listener {
     public final static String CHANNEL_NAME = "mimc:channel";
     public static Plugin id;
 
@@ -16,6 +18,7 @@ public class Info extends JavaPlugin
     public void onEnable() {
 
         getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL_NAME);
+		getServer().getPluginManager().registerEvents(this, this);
 
         id = this;
 
@@ -36,5 +39,10 @@ public class Info extends JavaPlugin
         });
 
         runnable.runTaskTimerAsynchronously(this, 0, 5 * 20);
+    }
+	
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent e){
+        e.setJoinMessage(null);
     }
 }
