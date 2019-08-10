@@ -45,4 +45,9 @@ public class Info extends JavaPlugin implements Listener {
     public void onPlayerJoin(PlayerJoinEvent e){
         e.setJoinMessage(null);
     }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent e){
+        e.setQuitMessage(null);
+    }
 }
