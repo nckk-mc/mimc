@@ -9,6 +9,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 
 public class Info extends JavaPlugin implements Listener {
     public final static String CHANNEL_NAME = "mimc:channel";
@@ -18,7 +19,7 @@ public class Info extends JavaPlugin implements Listener {
     public void onEnable() {
 
         getServer().getMessenger().registerOutgoingPluginChannel(this, CHANNEL_NAME);
-		getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(this, this);
 
         id = this;
 
