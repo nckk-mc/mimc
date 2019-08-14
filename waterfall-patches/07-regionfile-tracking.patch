@@ -1,0 +1,296 @@
+commit 3c401161b79b35ca05bfc7ca516367e431c6ee68
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Mon Aug 12 03:28:51 2019 +0200
+
+    Keeps track of regionfiles
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index f8d9f760..88bbf40e 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -47,6 +47,7 @@ import net.md_5.bungee.api.score.Score;
+ import net.md_5.bungee.api.score.Scoreboard;
+ import net.md_5.bungee.api.score.Team;
+ import net.md_5.bungee.chat.ComponentSerializer;
++import net.md_5.bungee.mimc.Dimension;
+ import net.md_5.bungee.mimc.PartitionManager;
+ import net.md_5.bungee.netty.ChannelWrapper;
+ import net.md_5.bungee.netty.PacketHandler;
+@@ -138,6 +139,10 @@ public class DownstreamBridge extends PacketHandler
+         return !server.isObsolete();
+     }
+ 
++    private void updateDimension(PacketWrapper packet) {
++        int dimension = packet.buf.readInt();
++        ((BungeeCord)bungee).partitionManager.respawnPlayer(con.getUniqueId(), Dimension.parse(dimension));
++    }
+     private boolean updatePlayerLocation(PacketWrapper packet) {
+         double x = packet.buf.readDouble();
+         double y = packet.buf.readDouble();
+@@ -145,8 +150,6 @@ public class DownstreamBridge extends PacketHandler
+         float yaw = packet.buf.readFloat();
+         float pitch = packet.buf.readFloat();
+         byte flags = packet.buf.readByte();
+-        //bungee.getLogger().info( String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
+-
+         return ((BungeeCord)bungee).partitionManager.tryTeleportPlayer(
+                 con.getUniqueId()
+                 , x, (flags & 0x1) == 0x1
+@@ -229,7 +232,10 @@ public class DownstreamBridge extends PacketHandler
+ //            case 0x37: packetName = "PacketPlayOutEntityDestroy"; break;
+ //            case 0x38: packetName = "PacketPlayOutRemoveEntityEffect"; break;
+ //            case 0x39: packetName = "PacketPlayOutResourcePackSend"; break;
+-//            case 0x3A: packetName = "PacketPlayOutRespawn"; break;
++            case 0x3A:
++//                packetName = "PacketPlayOutRespawn";
++                updateDimension(packet);
++                break;
+ //            case 0x3B: packetName = "PacketPlayOutEntityHeadRotation"; break;
+ //            case 0x3C: packetName = "PacketPlayOutSelectAdvancementTab"; break;
+ //            case 0x3D: packetName = "PacketPlayOutWorldBorder"; break;
+@@ -343,7 +349,7 @@ public class DownstreamBridge extends PacketHandler
+     public void handle(net.md_5.bungee.protocol.packet.Team team) throws Exception
+     {
+         Scoreboard serverScoreboard = con.getServerSentScoreboard();
+-        // Remove team and move on
++        // Remove team and teleportTo on
+         if ( team.getMode() == 1 )
+         {
+             serverScoreboard.removeTeam( team.getName() );
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java b/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java
+index 78ddffa9..dce26876 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Dimension.java
+@@ -1,7 +1,21 @@
+ package net.md_5.bungee.mimc;
+ 
+ public enum Dimension {
+-    OVERWORLD,
+-    NETHER,
+-    END;
++    OVERWORLD(0),
++    NETHER(-1),
++    END(1);
++
++    public int value;
++    Dimension(int value) {
++        this.value = value;
++    }
++
++    public static Dimension parse(int value) {
++        switch (value) {
++            case -1: return NETHER;
++            case 0: return OVERWORLD;
++            case 1: return END;
++        }
++        return OVERWORLD;
++    }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+index cdbca251..8afbca89 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+@@ -1,9 +1,10 @@
+ package net.md_5.bungee.mimc;
+ 
+ import java.util.*;
++import java.util.function.Consumer;
+ 
+ public class Partition {
+-    public final long MERGE_RADIUS = 2 * 32 * 16; // 2 Region files radius
++    public final long MERGE_RADIUS = 8 * 2 * 32 * 16; // 2 Region files in the nether radius
+ 
+     public String serverName;
+     public final List<Player> players = new ArrayList<>();
+@@ -16,8 +17,15 @@ public class Partition {
+     }
+ 
+     public boolean isInMergeRadius(Player player) {
++        PlayerLocation location = player.location;
++        Long overworldKey = pair((int)player.location.x >> 9, (int)player.location.z >> 9);
++        Long netherKey = pair((int)player.location.x >> 12, (int)player.location.z >> 12);
++        if (location.dimension == Dimension.OVERWORLD && netherRegions.contains(netherKey)) return true;
++        if (location.dimension == Dimension.NETHER && netherRegions.contains(overworldKey)) return true;
++        if (location.dimension == Dimension.END && endRegions.contains(overworldKey)) return true;
++
+         if (isSpawnPartition) {
+-            if (player.location.distance(new PlayerLocation(Dimension.OVERWORLD, 0, 70, 0, 0, 0)) <= 1024) {
++            if (player.location.distance(new PlayerLocation(Dimension.OVERWORLD, 0, 70, 0, 0, 0)) <= MERGE_RADIUS) {
+                 return true;
+             }
+         }
+@@ -38,4 +46,54 @@ public class Partition {
+     public int size() {
+         return this.players.size();
+     }
++
++    Set<Long> netherRegions = new HashSet<>();
++    Set<Long> endRegions = new HashSet<>();
++    public void track(PlayerLocation location) {
++        int x, z;
++        Set<Long> regions;
++        if (location.dimension == Dimension.OVERWORLD) {
++            x = (int)location.x >> 12;
++            z = (int)location.z >> 12;
++            regions = this.netherRegions;
++        } else if (location.dimension == Dimension.NETHER) {
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.netherRegions;
++        } else {
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.endRegions;
++        }
++        enumerateRegions(x, z, regions::add);
++    }
++    public void untrack(PlayerLocation location) {
++        int x, z;
++        Set<Long> regions;
++        if (location.dimension == Dimension.OVERWORLD) {
++            x = (int)location.x >> 12;
++            z = (int)location.z >> 12;
++            regions = this.netherRegions;
++        } else if (location.dimension == Dimension.NETHER) {
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.netherRegions;
++        } else { // END
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.endRegions;
++        }
++        enumerateRegions(x, z, regions::remove);
++    }
++    void enumerateRegions(int x, int z, Consumer<Long> consumer) {
++        for (int rz = z - 1; rz <= z + 1; rz++) {
++            for (int rx = x - 1; rx <= x + 1; rx++) {
++                Long key = pair(x, z);
++                consumer.accept(key);
++            }
++        }
++    }
++    static long pair(int i, int j) {
++        return (long) i & 4294967295L | ((long) j & 4294967295L) << 32;
++    }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 48cfc636..da2e1233 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -73,6 +73,7 @@ public class PartitionManager implements Listener {
+         }
+         return null;
+     }
++
+     public Player movePlayer(UUID uuid, double x, double y, double z) {
+         Player player = getPlayer(uuid);
+         if (player != null) {
+@@ -106,7 +107,7 @@ public class PartitionManager implements Listener {
+                 }
+             }
+ 
+-            player.move(
++            player.teleportTo(
+                     xIsRelative ? player.location.calculateOffsetFromX(x) : x
+                     , yIsRelative ? player.location.calculateOffsetFromY(y) : y
+                     , zIsRelative ? player.location.calculateOffsetFromZ(z) : z
+@@ -126,7 +127,7 @@ public class PartitionManager implements Listener {
+         PlayerLocation lastPlayerLocation = PlayerLocation.load(this.worldFolder, uniqueId.toString());
+         if (lastPlayerLocation != null) {
+             bungeeCord.getLogger().warning(String.format("MIMC | Player connected %s", p));
+-            p.move(lastPlayerLocation);
++            p.teleportTo(lastPlayerLocation);
+         } else {
+             bungeeCord.getLogger().warning(String.format("MIMC | New player connected %s", p));
+         }
+@@ -210,6 +211,7 @@ public class PartitionManager implements Listener {
+         MigrationRequest request = getLatestMigrationRequest(playerName);
+         if (request != null) {
+             Player p = request.player;
++            Partition previous = p.partition;
+             Partition target = request.target;
+ 
+             p.migrateTo(target);
+@@ -217,6 +219,8 @@ public class PartitionManager implements Listener {
+             p.userCon.connect(servers.get(target.serverName), (result, error) -> {
+                 if (result) {
+                     completedMigrations.add(request.complete());
++                    previous.untrack(p.location);
++                    target.track(p.location);
+                 } else {
+                     String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
+                     this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
+@@ -229,6 +233,12 @@ public class PartitionManager implements Listener {
+         }
+         return false;
+     }
++    public void respawnPlayer(UUID uuid, Dimension dimension) {
++        Player player = getPlayer(uuid);
++        if (player != null) {
++            player.respawnTo = dimension;
++        }
++    }
+ 
+     String suggestServerForNewPartition() {
+         Map<String, Long> serverPartitionCounts = new HashMap<>();
+@@ -273,6 +283,10 @@ public class PartitionManager implements Listener {
+         Partition previous = p.partition;
+         Partition target;
+ 
++        if (previous != null) {
++            previous.track(p.location);
++        }
++
+         List<Partition> partitionsInRange = new ArrayList<>();
+         List<Partition> partitionsNotInRange = new ArrayList<>();
+ 
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+index e6bf02c3..697ab92e 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+@@ -8,6 +8,7 @@ public class Player {
+     public final UserConnection userCon;
+     public final String name;
+     public final UUID uniqueId;
++    public Dimension respawnTo;
+     public PlayerLocation location;
+     public Partition partition;
+ 
+@@ -22,22 +23,33 @@ public class Player {
+         partition.add(this);
+     }
+ 
+-    public void move(PlayerLocation newLocation) {
++    public PlayerLocation teleportTo(PlayerLocation newLocation) {
+         this.location = newLocation;
++        return this.location;
+     }
+-    public void move(double x, double y, double z) {
++    public PlayerLocation teleportTo(double x, double y, double z, float yaw, float pitch) {
++        Dimension dimension = this.respawnTo;
++        if (dimension == null) {
++            dimension = location.dimension;
++        }
++        return teleportTo(new PlayerLocation(dimension, x, y, z, yaw, pitch));
++    }
++
++    public PlayerLocation move(double x, double y, double z) {
+         if (this.location == null) {
+             this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, 0, 0);
+         } else {
+             this.location = this.location.move(x, y, z);
+         }
++        return this.location;
+     }
+-    public void move(double x, double y, double z, float yaw, float pitch) {
++    public PlayerLocation move(double x, double y, double z, float yaw, float pitch) {
+         if (this.location == null) {
+             this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, yaw, pitch);
+         } else {
+             this.location = this.location.move(x, y, z, yaw, pitch);
+         }
++        return this.location;
+     }
+ 
+     @Override

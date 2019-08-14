@@ -1,0 +1,260 @@
+commit fef379dec16f8b0343a44ed8f8223218f3f8d8c2
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Mon Aug 12 03:26:37 2019 +0200
+
+    Adds file locking to prevent corruption, sets regionfiles to read-only based on player location
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 3daf8026..f8a47fcf 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -704,14 +704,22 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+ 
+         saveChunks(true, true, true);
+ 
+-        Iterator iterator = this.getWorlds().iterator();
+-        while(iterator.hasNext()) {
+-            WorldServer worldserver = (WorldServer) iterator.next();
+-            worldserver.isMigrating = true;
++        EntityPlayer player = getPlayerList().getPlayer(playerName);
++
++        if (player != null) {
++            LOGGER.warn(String.format("MIMC | Running MinecraftServer::preparePlayerForMigration() playerName=%s", playerName));
++        } else {
++            LOGGER.warn(String.format("MIMC | Running MinecraftServer::preparePlayerForMigration() player not found."));
++            return false;
+         }
+ 
+-        // Save player location just before responding so we have the most up-to-date location
+-        getPlayerList().savePlayers();
++        try {
++            player.getWorld().getWorldData().world.isMigrating = true;
++            ((ChunkProviderServer)player.getWorld().getChunkProvider()).playerChunkMap.setReadOnly(player);
++            getPlayerList().savePlayer(player);
++        } catch (IOException e) {
++            e.printStackTrace();
++        }
+ 
+         return true;
+     }
+diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+index dc59b3f8..2b8e5c82 100644
+--- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
++++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+@@ -22,17 +22,8 @@ import it.unimi.dsi.fastutil.objects.ObjectIterator;
+ import java.io.File;
+ import java.io.IOException;
+ import java.io.Writer;
+-import java.util.ArrayList;
+-import java.util.HashMap; // Paper
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Map; // Paper
+-import java.util.Objects;
+-import java.util.Optional;
+-import java.util.Queue;
+-import java.util.Set;
++import java.util.*;
+ import java.util.concurrent.CancellationException;
+-import java.util.UUID; // Paper
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+ import java.util.concurrent.Executor;
+@@ -747,6 +738,13 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+     }
+ 
+     public boolean saveChunk(IChunkAccess ichunkaccess) {
++        // MIMC start
++        Long key = ChunkCoordIntPair.pair(ichunkaccess.getPos().getRegionX(), ichunkaccess.getPos().getRegionZ());
++        if (this.readOnlyRegions.contains(key)) {
++            return false;
++        }
++        // MIMC end
++
+         this.n.a(ichunkaccess.getPos());
+         if (!ichunkaccess.isNeedsSaving()) {
+             return false;
+@@ -794,12 +792,18 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+     // MIMC start
+     @Override
+     public void write(ChunkCoordIntPair chunkcoordintpair, NBTTagCompound nbttagcompound) throws IOException {
+-        if (this.world.isMigrating) {
+-            //LOGGER.info("MIMC | isMigrating so skipping PlayerChunkMap::write()");
++        Long key = ChunkCoordIntPair.pair(chunkcoordintpair.x >> 5, chunkcoordintpair.z >> 5);
++        if (this.readOnlyRegions.contains(key)) {
++            LOGGER.info("MIMC | region is readonly so skipping PlayerChunkMap::write()");
+             return;
+         }
+         super.write(chunkcoordintpair, nbttagcompound);
+     }
++
++    @Override
++    protected String getWorldName() {
++        return this.world.worldData.getName();
++    }
+     // MIMC end
+ 
+     protected void setViewDistance(int i) {
+@@ -1301,6 +1305,26 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+ 
+     }
+ 
++    Set<Long> readOnlyRegions = Sets.newCopyOnWriteArraySet();
++    public void setReadOnly(EntityPlayer player) throws IOException {
++        int x = (int)player.locX >> 9, z = (int)player.locZ >> 9;
++        for (int rz = z - 1; rz <= z + 1; rz++) {
++            for (int rx = x - 1; rx <= x + 1; rx++) {
++                LOGGER.warn(String.format("Setting region file r.%s.%s.mca as read-only", rx, rz));
++                Long key = ChunkCoordIntPair.pair(rx, rz);
++                this.readOnlyRegions.add(key);
++                RegionFile regionFile = cache.get(key);
++                if (regionFile != null) {
++                    regionFile.close();
++                }
++                RegionFile regionFilePoi = this.n.cache.get(key);
++                if (regionFilePoi != null) {
++                    regionFilePoi.close();
++                }
++            }
++        }
++    }
++
+     protected VillagePlace h() {
+         return this.n;
+     }
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index 4448bf3a..d84665b0 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -1236,7 +1236,7 @@ public class PlayerConnection implements PacketListenerPlayIn {
+         this.player.setLocation(d0, d1, d2, f, f1);
+ 
+         // MIMC start
+-        this.minecraftServer.LOGGER.warn("MIMC | Saving players after teleport and before communicating back to BungeeCord");
++        this.minecraftServer.LOGGER.warn(String.format("MIMC | Saving players after teleport and before communicating back to BungeeCord %s", this.player.getName()));
+         this.minecraftServer.savePlayerData(this.player.getName());
+         // MIMC end
+ 
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index 12ddb704..03644125 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -987,17 +987,22 @@ public abstract class PlayerList {
+ 
+     // MIMC start
+     public void savePlayer(String playerName) {
++        EntityPlayer player = getPlayer(playerName);
++        if (player == null) {
++            LOGGER.info(String.format("MIMC | Player %s not found...", playerName));
++        } else {
++            savePlayer(player);
++        }
++    }
++    public void savePlayer(EntityPlayer player) {
++        if (player == null) {
++            LOGGER.info("MIMC | Player not found...");
++            return;
++        }
+         MCUtil.ensureMain("Save Player"
+             , () -> {
+-                for (int i = 0; i < this.players.size(); ++i) {
+-                    EntityPlayer player = this.players.get(i);
+-                    if (player.getName().equals(playerName)) {
+-                        this.savePlayerFile(player);
+-                        return null;
+-                    }
+-                }
+-                LOGGER.info(String.format("MIMC | Player %s not found...", playerName));
+-                return null;
++                this.savePlayerFile(player);
++                return player;
+         });
+     }
+     // MIMC end
+diff --git a/src/main/java/net/minecraft/server/RegionFile.java b/src/main/java/net/minecraft/server/RegionFile.java
+index 41f1e15c..1fdc3726 100644
+--- a/src/main/java/net/minecraft/server/RegionFile.java
++++ b/src/main/java/net/minecraft/server/RegionFile.java
+@@ -11,6 +11,8 @@ import java.io.DataOutputStream;
+ import java.io.File;
+ import java.io.IOException;
+ import java.io.RandomAccessFile;
++import java.nio.channels.FileChannel;
++import java.nio.channels.FileLock;
+ import java.util.List;
+ import java.util.zip.DeflaterOutputStream;
+ import java.util.zip.GZIPInputStream;
+@@ -36,6 +38,10 @@ public class RegionFile implements AutoCloseable {
+ 
+     private boolean closed;
+ 
++    // MIMC start
++    private FileLock lock;
++    // MIMC end
++
+     // invoked on write/read
+     public void setStatus(int x, int z, ChunkStatus status) {
+         if (this.closed) {
+@@ -54,9 +60,14 @@ public class RegionFile implements AutoCloseable {
+         return this.statuses[location];
+     }
+     // Paper end
+-
+     public RegionFile(File file) throws IOException {
+         this.b = new RandomAccessFile(file, "rw");
++
++        // MIMC start
++        FileChannel channel = this.b.getChannel();
++        this.lock = channel.tryLock();
++        // MIMC end
++
+         this.file = file; // Spigot // Paper - We need this earlier
+         if (this.b.length() < 8192L) { // Paper - headers should be 8192
+             this.b.write(RegionFile.a);
+@@ -341,7 +352,12 @@ public class RegionFile implements AutoCloseable {
+     }
+ 
+     public void close() throws IOException {
++        boolean wasOpen = !this.closed;
+         this.closed = true; // Paper
++        if(lock != null && wasOpen) {
++            org.bukkit.Bukkit.getLogger().warning("Region file lock released");
++            lock.release();
++        }
+         this.b.close();
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/RegionFileCache.java b/src/main/java/net/minecraft/server/RegionFileCache.java
+index c32e08af..f7e921b9 100644
+--- a/src/main/java/net/minecraft/server/RegionFileCache.java
++++ b/src/main/java/net/minecraft/server/RegionFileCache.java
+@@ -54,6 +54,12 @@ public abstract class RegionFileCache implements AutoCloseable {
+     }
+     // Paper end
+ 
++    // MIMC start
++    protected String getWorldName() {
++        return "<unknown>";
++    }
++    // MIMC end
++
+     public RegionFile getRegionFile(ChunkCoordIntPair chunkcoordintpair, boolean existingOnly) throws IOException { return this.a(chunkcoordintpair, existingOnly); } // Paper - OBFHELPER
+     private RegionFile a(ChunkCoordIntPair chunkcoordintpair, boolean existingOnly) throws IOException { // CraftBukkit
+         long i = ChunkCoordIntPair.pair(chunkcoordintpair.getRegionX(), chunkcoordintpair.getRegionZ());
+@@ -63,7 +69,7 @@ public abstract class RegionFileCache implements AutoCloseable {
+             return regionfile;
+         } else {
+             String fileName = "r." + chunkcoordintpair.getRegionX() + "." + chunkcoordintpair.getRegionZ() + ".mca";
+-            MinecraftServer.LOGGER.warn(String.format("Loading %s", fileName) );
++            MinecraftServer.LOGGER.warn(String.format("Loading %s | %s\\%s", getWorldName(), this.a, fileName) );
+ 
+             if (this.cache.size() >= PaperConfig.regionFileCacheSize) { // Paper - configurable
+                 ((RegionFile) this.cache.removeLast()).close();
+@@ -78,7 +84,6 @@ public abstract class RegionFileCache implements AutoCloseable {
+             File file = new File(this.a, "r." + chunkcoordintpair.getRegionX() + "." + chunkcoordintpair.getRegionZ() + ".mca");
+             if (existingOnly && !file.exists()) return null; // CraftBukkit
+             RegionFile regionfile1 = new RegionFile(file);
+-
+             this.cache.putAndMoveToFirst(i, regionfile1);
+             return regionfile1;
+         }
