@@ -37,12 +37,12 @@ cp ../config/Paper/* work/test-server/
 
 echo "MIMC | Applying paper-patches"
 cd Paper-Server
-for patch in ../../paper-patches/*.patch; do git apply $patch; done
+for patch in ../../paper-patches/*.patch; do git apply --ignore-space-change --ignore-whitespace $patch; done
 cd ..
 
 echo "MIMC | Applying paper-api-patches"
 cd Paper-API
-for patch in ../../paper-api-patches/*.patch; do git apply $patch; done
+for patch in ../../paper-api-patches/*.patch; do git apply --ignore-space-change --ignore-whitespace $patch; done
 cd ..
 
 echo "MIMC | Rebuilding Paper..."
@@ -62,7 +62,7 @@ cd Waterfall
 
 echo "MIMC | Applying waterfall-patches"
 cd Waterfall-Proxy
-for patch in ../../waterfall-patches/*.patch; do git apply $patch; done
+for patch in ../../waterfall-patches/*.patch; do git apply --ignore-space-change --ignore-whitespace $patch; done
 cd ..
 	
 echo "MIMC | Rebuilding Waterfall..."
