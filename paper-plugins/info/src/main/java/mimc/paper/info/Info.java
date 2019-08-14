@@ -33,8 +33,6 @@ public class Info extends JavaPlugin implements Listener {
                 out.writeUTF("tps-report");
                 out.writeDouble(Bukkit.getServer().getTPS()[0]);
 
-                getLogger().warning("Sending TPS");
-
                 Bukkit.getServer().sendPluginMessage(Info.id, CHANNEL_NAME, out.toByteArray());
             }
         });
