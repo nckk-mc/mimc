@@ -1,0 +1,247 @@
+commit 476ddaa90bab2698ea21c786a5a3e91fe4c96db4
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Thu Aug 8 01:12:45 2019 +0200
+
+    Adds support for seamless transition when migrating a player
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 845d6a33..85f81e64 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -24,7 +24,6 @@ import java.util.HashMap; // Waterfall
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Objects; // Waterfall
+-import java.util.logging.Level;
+ 
+ import lombok.RequiredArgsConstructor;
+ import net.md_5.bungee.BungeeCord;
+@@ -138,16 +137,16 @@ public class DownstreamBridge extends PacketHandler
+         return !server.isObsolete();
+     }
+ 
+-    private void updatePlayerLocation(PacketWrapper packet) {
++    private boolean updatePlayerLocation(PacketWrapper packet) {
+         double x = packet.buf.readDouble();
+         double y = packet.buf.readDouble();
+         double z = packet.buf.readDouble();
+         float yaw = packet.buf.readFloat();
+         float pitch = packet.buf.readFloat();
+         byte flags = packet.buf.readByte();
+-        //bungee.getLogger().info( String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getUniqueId(), x, y, z) );
++        //bungee.getLogger().info( String.format("PacketPlayOutPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
+ 
+-        ((BungeeCord)bungee).partitionManager.movePlayer(
++        return ((BungeeCord)bungee).partitionManager.tryTeleportPlayer(
+                 con.getUniqueId()
+                 , x, (flags & 0x1) == 0x1
+                 , y, (flags & 0x2) == 0x2
+@@ -223,7 +222,7 @@ public class DownstreamBridge extends PacketHandler
+ //            case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
+             case 0x35:
+ //                packetName = "PacketPlayOutPlayerPositionAndLook";
+-                updatePlayerLocation(packet);
++                if (!updatePlayerLocation(packet)) return;
+                 break;
+ //            case 0x36: packetName = "PacketPlayOutUnlockRecipes"; break;
+ //            case 0x37: packetName = "PacketPlayOutEntityDestroy"; break;
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+index c0a489cd..9aee41e4 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
+@@ -125,6 +125,7 @@ public class UpstreamBridge extends PacketHandler
+         double x = packet.buf.readDouble();
+         double y = packet.buf.readDouble();
+         double z = packet.buf.readDouble();
++//        bungee.getLogger().info( String.format("PacketPlayInPlayerPosition %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
+         ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z);
+     }
+     private void updatePlayerLocationAndLook(PacketWrapper packet) {
+@@ -133,6 +134,7 @@ public class UpstreamBridge extends PacketHandler
+         double z = packet.buf.readDouble();
+         float yaw = packet.buf.readFloat();
+         float pitch = packet.buf.readFloat();
++//        bungee.getLogger().info( String.format("PacketPlayInPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
+         ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z, yaw, pitch);
+     }
+ 
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+index 42f36490..e8d5324b 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+@@ -3,10 +3,18 @@ package net.md_5.bungee.mimc;
+ public class MigrationRequest {
+     public final Player player;
+     public final Partition target;
++    public final Long requestedAt;
++    public Long completedAt;
+ 
+     public MigrationRequest(Player player, Partition target) {
+         this.player = player;
+         this.target = target;
++        this.requestedAt = System.currentTimeMillis();
++    }
++
++    public MigrationRequest complete() {
++        completedAt = System.currentTimeMillis();
++        return this;
+     }
+ 
+     public int hashCode() {
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index 959173be..8d7dcea5 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -2,16 +2,10 @@ package net.md_5.bungee.mimc;
+ 
+ import com.google.common.io.ByteArrayDataOutput;
+ import com.google.common.io.ByteStreams;
+-import io.netty.buffer.ByteBuf;
+-import io.netty.buffer.Unpooled;
+ import net.md_5.bungee.BungeeCord;
+ import net.md_5.bungee.UserConnection;
+-import net.md_5.bungee.api.Callback;
+ import net.md_5.bungee.api.config.ServerInfo;
+ import net.md_5.bungee.mimc.util.CopyOnWriteSet;
+-import net.md_5.bungee.protocol.DefinedPacket;
+-import net.md_5.bungee.protocol.PacketWrapper;
+-import net.md_5.bungee.protocol.Protocol;
+ 
+ import java.util.*;
+ import java.util.logging.Level;
+@@ -26,6 +20,7 @@ public class PartitionManager {
+     private List<Partition> partitions = new ArrayList<>();
+     private List<Player> players = new ArrayList<>();
+     private CopyOnWriteSet<MigrationRequest> migrationRequests = new CopyOnWriteSet<>();
++    private CopyOnWriteSet<MigrationRequest> completedMigrations = new CopyOnWriteSet<>();
+ 
+     public PartitionManager(BungeeCord bungeeCord) {
+         this.bungeeCord = bungeeCord;
+@@ -81,13 +76,23 @@ public class PartitionManager {
+         }
+         return player;
+     }
+-    public void movePlayer(UUID uuid
++    public boolean tryTeleportPlayer(UUID uuid
+             , double x, boolean xIsRelative
+             , double y, boolean yIsRelative
+             , double z, boolean zIsRelative
+             , float yaw, float pitch) {
+         Player player = getPlayer(uuid);
+         if (player != null) {
++            MigrationRequest request = getLatestMigration(player.name);
++            if (request != null) {
++                // Grace period after a new player connecting that we do not proxy teleports
++                // This eliminates the rubber banding issue when migrating between nodes
++                if (System.currentTimeMillis() < request.completedAt + 5_000) {
++                    bungeeCord.getLogger().warning(String.format("MIMC | Player %s Teleport ignored during grace period after migration.", player.name));
++                    return false;
++                }
++            }
++
+             player.move(
+                     xIsRelative ? player.location.calculateOffsetFromX(x) : x
+                     , yIsRelative ? player.location.calculateOffsetFromY(y) : y
+@@ -97,6 +102,7 @@ public class PartitionManager {
+ 
+             migratePlayer(player);
+         }
++        return true;
+     }
+ 
+     public Player addPlayer(UserConnection userCon) {
+@@ -149,45 +155,62 @@ public class PartitionManager {
+ 
+         sendMigrationMessage(p, target);
+     }
+-
+-    public boolean completeMigration(String playerName) {
+-        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
+-
++    MigrationRequest getLatestMigrationRequest(String playerName) {
+         Iterator<MigrationRequest> iterator = this.migrationRequests.iterator();
++        MigrationRequest latestRequest = null;
++        while(iterator.hasNext()) {
++            MigrationRequest request = iterator.next();
++            if (request.player.name.equals(playerName)) {
++                if (latestRequest == null) {
++                    latestRequest = request;
++                } else {
++                    if (latestRequest.requestedAt < request.requestedAt) {
++                        latestRequest = request;
++                    }
++                }
++            }
++        }
++        return latestRequest;
++    }
++    MigrationRequest getLatestMigration(String playerName) {
++        Iterator<MigrationRequest> iterator = this.completedMigrations.iterator();
++        MigrationRequest latestRequest = null;
+         while(iterator.hasNext()) {
+             MigrationRequest request = iterator.next();
++            if (request.player.name.equals(playerName)) {
++                if (latestRequest == null) {
++                    latestRequest = request;
++                } else {
++                    if (latestRequest.completedAt < request.completedAt) {
++                        latestRequest = request;
++                    }
++                }
++            }
++        }
++        return latestRequest;
++    }
++    public boolean completeMigration(String playerName) {
++        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
++
++        MigrationRequest request = getLatestMigrationRequest(playerName);
++        if (request != null) {
+             Player p = request.player;
+             Partition target = request.target;
+ 
+-            if (p.name.equals(playerName)) {
+-                p.migrateTo(target);
+-
+-                p.userCon.connect(servers.get(target.serverName), (result, error) -> {
+-                    if (result) {
+-                        // Immediately close loading screen
+-//                        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+-//                        out.writeByte(0x35);
+-//                        out.writeDouble(p.location.x);
+-//                        out.writeDouble(p.location.y);
+-//                        out.writeDouble(p.location.z);
+-//                        out.writeFloat(p.location.yaw);
+-//                        out.writeFloat(p.location.pitch);
+-//                        out.writeByte(0); // Flags
+-//                        out.writeByte(0); // Teleport ID
+-//                        ByteBuf buf = Unpooled.wrappedBuffer(out.toByteArray());
+-//                        PacketWrapper packet = new PacketWrapper( null, buf );
+-//                        p.userCon.sendPacket(packet);
+-
+-                    } else {
+-                        String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
+-                        this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
+-                        p.userCon.disconnect(errorMessage);
+-                    }
+-                });
++            p.migrateTo(target);
+ 
+-                this.migrationRequests.remove(request);
+-                return true;
+-            }
++            p.userCon.connect(servers.get(target.serverName), (result, error) -> {
++                if (result) {
++                    completedMigrations.add(request.complete());
++                } else {
++                    String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
++                    this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
++                    p.userCon.disconnect(errorMessage);
++                }
++            });
++
++            this.migrationRequests.remove(request);
++            return true;
+         }
+         return false;
+     }

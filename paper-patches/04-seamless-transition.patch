@@ -1,0 +1,48 @@
+commit 6e0409fa59498b61179e9f0afcc9463d6bc14889
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Thu Aug 8 01:04:51 2019 +0200
+
+    Adds support for seamless transition between nodes
+
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index f36ae899..4448bf3a 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -1169,9 +1169,16 @@ public class PlayerConnection implements PacketListenerPlayIn {
+         float pitch = f1;
+ 
+         Location to = new Location(this.getPlayer().getWorld(), x, y, z, yaw, pitch);
++
+         // SPIGOT-5171: Triggered on join
+         if (from.equals(to)) {
+             this.internalTeleport(d0, d1, d2, f, f1, set);
++
++            // MIMC start
++            // Eliminates the rubberbanding issue when a player is migrated
++            this.teleportPos = null;
++            // MIMC end
++
+             return;
+         }
+ 
+@@ -1230,7 +1237,7 @@ public class PlayerConnection implements PacketListenerPlayIn {
+ 
+         // MIMC start
+         this.minecraftServer.LOGGER.warn("MIMC | Saving players after teleport and before communicating back to BungeeCord");
+-        this.minecraftServer.getPlayerList().savePlayers();
++        this.minecraftServer.savePlayerData(this.player.getName());
+         // MIMC end
+ 
+         this.player.playerConnection.sendPacket(new PacketPlayOutPosition(d0 - d3, d1 - d4, d2 - d5, f - f2, f1 - f3, set, this.teleportAwait));
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index f22e0a52..12ddb704 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -992,7 +992,6 @@ public abstract class PlayerList {
+                 for (int i = 0; i < this.players.size(); ++i) {
+                     EntityPlayer player = this.players.get(i);
+                     if (player.getName().equals(playerName)) {
+-                        LOGGER.info(String.format("MIMC | Saving PlayerFile %s", playerName));
+                         this.savePlayerFile(player);
+                         return null;
+                     }
