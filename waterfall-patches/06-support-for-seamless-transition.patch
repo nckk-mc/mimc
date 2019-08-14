@@ -1,22 +1,14 @@
-commit 476ddaa90bab2698ea21c786a5a3e91fe4c96db4
+commit ea6b56ad30c3681b0cc102c8c9df3852b2e4a81a
 Author: Yannick Motton <ymotton@gmail.com>
-Date:   Thu Aug 8 01:12:45 2019 +0200
+Date:   Thu Aug 8 03:25:46 2019 +0200
 
-    Adds support for seamless transition when migrating a player
+    Seamless transitions
 
 diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
-index 845d6a33..85f81e64 100644
+index 845d6a33..f8d9f760 100644
 --- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
 +++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
-@@ -24,7 +24,6 @@ import java.util.HashMap; // Waterfall
- import java.util.List;
- import java.util.Map;
- import java.util.Objects; // Waterfall
--import java.util.logging.Level;
- 
- import lombok.RequiredArgsConstructor;
- import net.md_5.bungee.BungeeCord;
-@@ -138,16 +137,16 @@ public class DownstreamBridge extends PacketHandler
+@@ -138,23 +138,23 @@ public class DownstreamBridge extends PacketHandler
          return !server.isObsolete();
      }
  
@@ -36,7 +28,15 @@ index 845d6a33..85f81e64 100644
                  con.getUniqueId()
                  , x, (flags & 0x1) == 0x1
                  , y, (flags & 0x2) == 0x2
-@@ -223,7 +222,7 @@ public class DownstreamBridge extends PacketHandler
+                 , z, (flags & 0x4) == 0x4
+                 , yaw
+                 , pitch
+-            );
++        );
+     }
+ 
+     @Override
+@@ -223,7 +223,7 @@ public class DownstreamBridge extends PacketHandler
  //            case 0x34: packetName = "PacketPlayOutFacePlayer"; break;
              case 0x35:
  //                packetName = "PacketPlayOutPlayerPositionAndLook";
@@ -45,26 +45,6 @@ index 845d6a33..85f81e64 100644
                  break;
  //            case 0x36: packetName = "PacketPlayOutUnlockRecipes"; break;
  //            case 0x37: packetName = "PacketPlayOutEntityDestroy"; break;
-diff --git a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
-index c0a489cd..9aee41e4 100644
---- a/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
-+++ b/proxy/src/main/java/net/md_5/bungee/connection/UpstreamBridge.java
-@@ -125,6 +125,7 @@ public class UpstreamBridge extends PacketHandler
-         double x = packet.buf.readDouble();
-         double y = packet.buf.readDouble();
-         double z = packet.buf.readDouble();
-+//        bungee.getLogger().info( String.format("PacketPlayInPlayerPosition %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
-         ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z);
-     }
-     private void updatePlayerLocationAndLook(PacketWrapper packet) {
-@@ -133,6 +134,7 @@ public class UpstreamBridge extends PacketHandler
-         double z = packet.buf.readDouble();
-         float yaw = packet.buf.readFloat();
-         float pitch = packet.buf.readFloat();
-+//        bungee.getLogger().info( String.format("PacketPlayInPlayerPositionAndLook %s X: %.2f Y: %.2f Z: %.2f", con.getName(), x, y, z) );
-         ((BungeeCord)bungee).partitionManager.movePlayer(con.getUniqueId(), x, y, z, yaw, pitch);
-     }
- 
 diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
 index 42f36490..e8d5324b 100644
 --- a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
@@ -89,27 +69,10 @@ index 42f36490..e8d5324b 100644
  
      public int hashCode() {
 diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
-index 959173be..8d7dcea5 100644
+index f23052cb..48cfc636 100644
 --- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
 +++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
-@@ -2,16 +2,10 @@ package net.md_5.bungee.mimc;
- 
- import com.google.common.io.ByteArrayDataOutput;
- import com.google.common.io.ByteStreams;
--import io.netty.buffer.ByteBuf;
--import io.netty.buffer.Unpooled;
- import net.md_5.bungee.BungeeCord;
- import net.md_5.bungee.UserConnection;
--import net.md_5.bungee.api.Callback;
- import net.md_5.bungee.api.config.ServerInfo;
- import net.md_5.bungee.mimc.util.CopyOnWriteSet;
--import net.md_5.bungee.protocol.DefinedPacket;
--import net.md_5.bungee.protocol.PacketWrapper;
--import net.md_5.bungee.protocol.Protocol;
- 
- import java.util.*;
- import java.util.logging.Level;
-@@ -26,6 +20,7 @@ public class PartitionManager {
+@@ -27,6 +27,7 @@ public class PartitionManager implements Listener {
      private List<Partition> partitions = new ArrayList<>();
      private List<Player> players = new ArrayList<>();
      private CopyOnWriteSet<MigrationRequest> migrationRequests = new CopyOnWriteSet<>();
@@ -117,7 +80,7 @@ index 959173be..8d7dcea5 100644
  
      public PartitionManager(BungeeCord bungeeCord) {
          this.bungeeCord = bungeeCord;
-@@ -81,13 +76,23 @@ public class PartitionManager {
+@@ -88,13 +89,23 @@ public class PartitionManager implements Listener {
          }
          return player;
      }
@@ -142,7 +105,7 @@ index 959173be..8d7dcea5 100644
              player.move(
                      xIsRelative ? player.location.calculateOffsetFromX(x) : x
                      , yIsRelative ? player.location.calculateOffsetFromY(y) : y
-@@ -97,6 +102,7 @@ public class PartitionManager {
+@@ -104,6 +115,7 @@ public class PartitionManager implements Listener {
  
              migratePlayer(player);
          }
@@ -150,11 +113,10 @@ index 959173be..8d7dcea5 100644
      }
  
      public Player addPlayer(UserConnection userCon) {
-@@ -149,45 +155,62 @@ public class PartitionManager {
- 
+@@ -157,44 +169,63 @@ public class PartitionManager implements Listener {
          sendMigrationMessage(p, target);
      }
--
+ 
 -    public boolean completeMigration(String playerName) {
 -        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
 -
@@ -192,6 +154,7 @@ index 959173be..8d7dcea5 100644
 +        }
 +        return latestRequest;
 +    }
++
 +    public boolean completeMigration(String playerName) {
 +        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
 +
@@ -245,3 +208,11 @@ index 959173be..8d7dcea5 100644
          }
          return false;
      }
+@@ -222,6 +253,7 @@ public class PartitionManager implements Listener {
+ 
+         // Gets the server with the highest TPS
+         String serverWithHighestTPS = this.serverTPSMap.entrySet().stream()
++                .filter(x -> !x.getKey().equals(SPAWN_SERVERNAME))
+                 .max(Comparator.comparing(Map.Entry::getValue))
+                 .get().getKey();
+ 
