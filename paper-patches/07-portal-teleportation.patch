@@ -1,0 +1,337 @@
+commit 78af9af6f4c8b325ecc80ab7de3582a2c5b81018
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Tue Aug 20 03:14:33 2019 +0200
+
+    Adds support for portal teleportation
+
+diff --git a/src/main/java/net/minecraft/server/Entity.java b/src/main/java/net/minecraft/server/Entity.java
+index e8def7f8..5883a176 100644
+--- a/src/main/java/net/minecraft/server/Entity.java
++++ b/src/main/java/net/minecraft/server/Entity.java
+@@ -203,6 +203,12 @@ public abstract class Entity implements INamableTileEntity, ICommandListener, Ke
+     }
+     // CraftBukkit end
+ 
++    // MIMC start
++    public Location overrideLocation; // Overrides (locX, locY, locZ) on consecutive save
++    public boolean isReadOnly;
++    public boolean portalTeleport;
++    // MIMC end
++
+     public Entity(EntityTypes<?> entitytypes, World world) {
+         this.id = Entity.entityCount.incrementAndGet();
+         this.passengers = Lists.newArrayList();
+@@ -1545,7 +1551,17 @@ public abstract class Entity implements INamableTileEntity, ICommandListener, Ke
+ 
+     public NBTTagCompound save(NBTTagCompound nbttagcompound) {
+         try {
+-            nbttagcompound.set("Pos", this.a(this.locX, this.locY, this.locZ));
++            // MIMC start
++            if (this.overrideLocation != null) {
++                nbttagcompound.set("Pos", this.a(this.overrideLocation.getX(), this.overrideLocation.getY(), this.overrideLocation.getZ()));
++                nbttagcompound.set("enteredNetherPosition", this.a(this.locX, this.locY, this.locZ));
++                nbttagcompound.setBoolean("mimcPortalTeleport", true);
++            } else {
++                nbttagcompound.set("Pos", this.a(this.locX, this.locY, this.locZ));
++                nbttagcompound.setBoolean("mimcPortalTeleport", false);
++            }
++            // MIMC end
++
+             Vec3D vec3d = this.getMot();
+ 
+             nbttagcompound.set("Motion", this.a(vec3d.x, vec3d.y, vec3d.z));
+@@ -1561,19 +1577,49 @@ public abstract class Entity implements INamableTileEntity, ICommandListener, Ke
+             }
+             // CraftBukkit end
+ 
+-            nbttagcompound.set("Rotation", this.a(this.yaw, this.pitch));
++            // MIMC start
++            if (this.overrideLocation != null) {
++                nbttagcompound.set("Rotation", this.a(this.overrideLocation.getYaw(), this.overrideLocation.getPitch()));
++            } else {
++                nbttagcompound.set("Rotation", this.a(this.yaw, this.pitch));
++            }
++            // MIMC end
++
+             nbttagcompound.setFloat("FallDistance", this.fallDistance);
+             nbttagcompound.setShort("Fire", (short) this.fireTicks);
+             nbttagcompound.setShort("Air", (short) this.getAirTicks());
+             nbttagcompound.setBoolean("OnGround", this.onGround);
+-            nbttagcompound.setInt("Dimension", this.dimension.getType().getDimensionID()); // CraftBukkit - preserve Vanilla compat
++
++            // MIMC start
++            if (this.overrideLocation != null) {
++                String name = this.overrideLocation.getWorld().getName();
++                int dimension = name.equals("world") ? 0 : (name.equals("world_nether") ? -1 : 1);
++                nbttagcompound.setInt("Dimension", dimension);
++            } else {
++                nbttagcompound.setInt("Dimension", this.dimension.getType().getDimensionID()); // CraftBukkit - preserve Vanilla compat
++            }
++            // MIMC end
++
+             nbttagcompound.setBoolean("Invulnerable", this.invulnerable);
+             nbttagcompound.setInt("PortalCooldown", this.portalCooldown);
+             nbttagcompound.a("UUID", this.getUniqueID());
+             // CraftBukkit start
+             // PAIL: Check above UUID reads 1.8 properly, ie: UUIDMost / UUIDLeast
+-            nbttagcompound.setLong("WorldUUIDLeast", ((WorldServer) this.world).getDataManager().getUUID().getLeastSignificantBits());
+-            nbttagcompound.setLong("WorldUUIDMost", ((WorldServer) this.world).getDataManager().getUUID().getMostSignificantBits());
++
++            // MIMC start
++            if (this.overrideLocation != null) {
++                UUID uuid = this.overrideLocation.getWorld().getUID();
++                nbttagcompound.setLong("WorldUUIDLeast", uuid.getLeastSignificantBits());
++                nbttagcompound.setLong("WorldUUIDMost", uuid.getMostSignificantBits());
++            } else {
++                UUID uuid = ((WorldServer) this.world).getDataManager().getUUID();
++                nbttagcompound.setLong("WorldUUIDLeast", uuid.getLeastSignificantBits());
++                nbttagcompound.setLong("WorldUUIDMost", uuid.getMostSignificantBits());
++            }
++
++            this.overrideLocation = null;
++            // MIMC end
++
+             nbttagcompound.setInt("Bukkit.updateLevel", CURRENT_LEVEL);
+             nbttagcompound.setInt("Spigot.ticksLived", this.ticksLived);
+             // CraftBukkit end
+@@ -1664,6 +1710,9 @@ public abstract class Entity implements INamableTileEntity, ICommandListener, Ke
+     public void f(NBTTagCompound nbttagcompound) {
+         try {
+             NBTTagList nbttaglist = nbttagcompound.getList("Pos", 6);
++            // MIMC start
++            this.portalTeleport = nbttagcompound.getBoolean("mimcPortalTeleport");
++            // MIMC end
+             NBTTagList nbttaglist1 = nbttagcompound.getList("Motion", 6);
+             NBTTagList nbttaglist2 = nbttagcompound.getList("Rotation", 5);
+             double d0 = nbttaglist1.h(0);
+@@ -1768,6 +1817,10 @@ public abstract class Entity implements INamableTileEntity, ICommandListener, Ke
+                     bworld = ((org.bukkit.craftbukkit.CraftServer) server).getServer().getWorldServer(DimensionManager.OVERWORLD).getWorld();
+                 }
+ 
++                // MIMC start
++                LogManager.getLogger().warn(String.format(""));
++                // MIMC end
++
+                 spawnIn(bworld == null ? null : ((CraftWorld) bworld).getHandle());
+             }
+             this.getBukkitEntity().readBukkitValues(nbttagcompound);
+diff --git a/src/main/java/net/minecraft/server/EntityPlayer.java b/src/main/java/net/minecraft/server/EntityPlayer.java
+index 95fc428c..2b27daf7 100644
+--- a/src/main/java/net/minecraft/server/EntityPlayer.java
++++ b/src/main/java/net/minecraft/server/EntityPlayer.java
+@@ -12,6 +12,8 @@ import java.util.List;
+ import java.util.OptionalInt;
+ import java.util.Random;
+ import javax.annotation.Nullable;
++
++import mimc.event.player.PlayerNonLocalTeleportEvent;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+ 
+@@ -25,6 +27,7 @@ import org.bukkit.craftbukkit.CraftWorld;
+ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.craftbukkit.inventory.CraftItemStack;
++import org.bukkit.entity.Player;
+ import org.bukkit.event.inventory.InventoryType;
+ import org.bukkit.event.player.PlayerChangedMainHandEvent;
+ import org.bukkit.event.player.PlayerChangedWorldEvent;
+@@ -871,6 +874,33 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             d2 = exit.getZ();
+             f1 = exit.getYaw();
+             f = exit.getPitch();
++
++            // MIMC start
++            ChunkProviderServer server = (ChunkProviderServer)getWorld().getChunkProvider();
++            Long key = ChunkCoordIntPair.pair((int)d0 >> 9, (int)d2 >> 9);
++            if (!server.playerChunkMap.cache.containsKey(key)) {
++                String playerName = getName();
++                int sourceDimensionID = dimensionmanager1.getType().getDimensionID();
++                int targetDimensionID = dimensionmanager.getType().getDimensionID();
++
++                Player player = playerConnection.getPlayer();
++                Location from = player.getLocation();
++                Location to = new Location(exit.getWorld(), d0, d1, d2, f1, f);
++
++                LOGGER.warn(String.format("MIMC | Player '%s' attempting jump to unloaded regionFile %s", playerName, to));
++
++                // Save new position to playerdata
++                this.overrideLocation = to;
++                this.server.savePlayerData(playerName);
++                this.isReadOnly = true;
++
++                playerConnection.server.getPluginManager()
++                    .callEvent(new PlayerNonLocalTeleportEvent(player, from.clone(), sourceDimensionID, to, targetDimensionID, TeleportCause.UNKNOWN));
++
++                return this;
++            }
++            // MIMC end
++
+             this.worldChangeInvuln = true; // CraftBukkit - Set teleport invulnerability only if player changing worlds
+             dimensionmanager = worldserver1.getWorldProvider().getDimensionManager();
+             // CraftBukkit end
+@@ -961,6 +991,7 @@ public class EntityPlayer extends EntityHuman implements ICrafting {
+             PlayerChangedWorldEvent changeEvent = new PlayerChangedWorldEvent(this.getBukkitEntity(), worldserver.getWorld());
+             this.world.getServer().getPluginManager().callEvent(changeEvent);
+             // CraftBukkit end
++
+             return this;
+         }
+     }
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index f8a47fcf..0394b338 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -727,6 +727,12 @@ public abstract class MinecraftServer extends IAsyncTaskHandlerReentrant<TickTas
+         getPlayerList().savePlayer(playerName);
+         return true;
+     }
++    public void setPlayerReadOnly(String playerName, boolean value) {
++        EntityPlayer player = getPlayerList().getPlayer(playerName);
++        if (player != null) {
++            player.isReadOnly = value;
++        }
++    }
+     // MIMC end
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/server/PlayerChunkMap.java b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+index 2b8e5c82..2637deb1 100644
+--- a/src/main/java/net/minecraft/server/PlayerChunkMap.java
++++ b/src/main/java/net/minecraft/server/PlayerChunkMap.java
+@@ -1305,6 +1305,7 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+ 
+     }
+ 
++    // MIMC start
+     Set<Long> readOnlyRegions = Sets.newCopyOnWriteArraySet();
+     public void setReadOnly(EntityPlayer player) throws IOException {
+         int x = (int)player.locX >> 9, z = (int)player.locZ >> 9;
+@@ -1324,6 +1325,7 @@ public class PlayerChunkMap extends IChunkLoader implements PlayerChunk.d {
+             }
+         }
+     }
++    // MIMC end
+ 
+     protected VillagePlace h() {
+         return this.n;
+diff --git a/src/main/java/net/minecraft/server/PlayerConnection.java b/src/main/java/net/minecraft/server/PlayerConnection.java
+index d84665b0..cc46684c 100644
+--- a/src/main/java/net/minecraft/server/PlayerConnection.java
++++ b/src/main/java/net/minecraft/server/PlayerConnection.java
+@@ -14,7 +14,7 @@ import java.util.Iterator;
+ import java.util.Optional;
+ import java.util.Set;
+ import javax.annotation.Nullable;
+-import org.apache.commons.lang3.StringEscapeUtils;
++
+ import org.apache.commons.lang3.StringUtils;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+@@ -59,7 +59,6 @@ import org.bukkit.inventory.CraftingInventory;
+ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.InventoryView;
+ import org.bukkit.util.NumberConversions;
+-import com.destroystokyo.paper.event.player.IllegalPacketEvent; // Paper
+ import com.destroystokyo.paper.event.player.PlayerJumpEvent; // Paper
+ import co.aikar.timings.MinecraftTimings; // Paper
+ // CraftBukkit end
+@@ -117,7 +116,7 @@ public class PlayerConnection implements PacketListenerPlayIn {
+         this.server = minecraftserver.server;
+     }
+ 
+-    private final org.bukkit.craftbukkit.CraftServer server;
++    public final org.bukkit.craftbukkit.CraftServer server;
+     public boolean processedDisconnect;
+     private int lastTick = MinecraftServer.currentTick;
+     private int allowedPlayerTicks = 1;
+@@ -1172,11 +1171,27 @@ public class PlayerConnection implements PacketListenerPlayIn {
+ 
+         // SPIGOT-5171: Triggered on join
+         if (from.equals(to)) {
+-            this.internalTeleport(d0, d1, d2, f, f1, set);
+ 
+             // MIMC start
+-            // Eliminates the rubberbanding issue when a player is migrated
+-            this.teleportPos = null;
++            if (this.player.portalTeleport) {
++                this.minecraftServer.LOGGER.warn(String.format("MIMC | Inbound Portal TP for '%s' to %s", this.player.getName(), to));
++                this.player.portalTeleport = false;
++                PortalTravelAgent agent = this.player.getWorldServer().getTravelAgent();
++                this.player.portalCooldown = 0;
++                // Simulates entering portal on target server
++                this.player.c(new BlockPosition(to.getX(), to.getY(), to.getZ()));
++                // Forces player to exit at the linked portal
++                if (!agent.a(this.player, yaw)) {
++                    agent.a(this.player);
++                    agent.a(this.player, yaw);
++                }
++                this.internalTeleport(this.player.locX, this.player.locY, this.player.locZ, this.player.yaw, this.player.pitch, set);
++                this.player.portalCooldown = 10;
++            } else {
++                this.internalTeleport(d0, d1, d2, f, f1, set);
++                // Eliminates the rubberbanding issue when a player is migrated
++                this.teleportPos = null;
++            }
+             // MIMC end
+ 
+             return;
+diff --git a/src/main/java/net/minecraft/server/PlayerList.java b/src/main/java/net/minecraft/server/PlayerList.java
+index 03644125..41c4000c 100644
+--- a/src/main/java/net/minecraft/server/PlayerList.java
++++ b/src/main/java/net/minecraft/server/PlayerList.java
+@@ -989,7 +989,7 @@ public abstract class PlayerList {
+     public void savePlayer(String playerName) {
+         EntityPlayer player = getPlayer(playerName);
+         if (player == null) {
+-            LOGGER.info(String.format("MIMC | Player %s not found...", playerName));
++            LOGGER.info(String.format("MIMC | Player '%s' not found...", playerName));
+         } else {
+             savePlayer(player);
+         }
+diff --git a/src/main/java/net/minecraft/server/RegionFile.java b/src/main/java/net/minecraft/server/RegionFile.java
+index 1fdc3726..ca198edb 100644
+--- a/src/main/java/net/minecraft/server/RegionFile.java
++++ b/src/main/java/net/minecraft/server/RegionFile.java
+@@ -354,10 +354,12 @@ public class RegionFile implements AutoCloseable {
+     public void close() throws IOException {
+         boolean wasOpen = !this.closed;
+         this.closed = true; // Paper
++        // MIMC start
+         if(lock != null && wasOpen) {
+-            org.bukkit.Bukkit.getLogger().warning("Region file lock released");
++            //org.bukkit.Bukkit.getLogger().warning("Region file lock released");
+             lock.release();
+         }
++        // MIMC end
+         this.b.close();
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/WorldNBTStorage.java b/src/main/java/net/minecraft/server/WorldNBTStorage.java
+index 1eb5a4d3..ba8cc11e 100644
+--- a/src/main/java/net/minecraft/server/WorldNBTStorage.java
++++ b/src/main/java/net/minecraft/server/WorldNBTStorage.java
+@@ -200,6 +200,9 @@ public class WorldNBTStorage implements IPlayerFileData {
+     @Override
+     public void save(EntityHuman entityhuman) {
+         if(!com.destroystokyo.paper.PaperConfig.savePlayerData) return; // Paper - Make player data saving configurable
++        // MIMC start
++        if (entityhuman.isReadOnly) return;
++        // MIMC end
+         try {
+             NBTTagCompound nbttagcompound = entityhuman.save(new NBTTagCompound());
+             File file = new File(this.playerDir, entityhuman.getUniqueIDString() + ".dat.tmp");
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index ba6907b2..8d123605 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -2173,5 +2173,9 @@ public final class CraftServer implements MimcServer {
+     public boolean savePlayerData(String playerName) {
+         return this.console.savePlayerData(playerName);
+     }
++    @Override
++    public void setPlayerReadOnly(String playerName, boolean value) {
++        this.console.setPlayerReadOnly(playerName, value);
++    }
+     // MIMC end
+ }

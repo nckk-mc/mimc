@@ -6,3 +6,4 @@ Waterfall/
 workspace.xml
 paper-plugins/info/target
 .idea
+clean_and_start_node_spawn.sh

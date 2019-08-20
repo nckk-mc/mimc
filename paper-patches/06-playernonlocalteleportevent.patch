@@ -1,0 +1,43 @@
+commit 0898b19ca30dd25442237bfc9e34f9a4686869fe
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Tue Aug 20 03:13:28 2019 +0200
+
+    Adds PlayerNonLocalTeleportEvent
+
+diff --git a/src/main/java/mimc/MimcServer.java b/src/main/java/mimc/MimcServer.java
+index c74afaa2..603012c6 100644
+--- a/src/main/java/mimc/MimcServer.java
++++ b/src/main/java/mimc/MimcServer.java
+@@ -6,4 +6,5 @@ import org.jetbrains.annotations.NotNull;
+ public interface MimcServer extends Server {
+     boolean preparePlayerForMigration(@NotNull String playerName);
+     boolean savePlayerData(@NotNull String playerName);
++    void setPlayerReadOnly(@NotNull String playerName, boolean value);
+ }
+diff --git a/src/main/java/mimc/event/player/PlayerNonLocalTeleportEvent.java b/src/main/java/mimc/event/player/PlayerNonLocalTeleportEvent.java
+new file mode 100644
+index 00000000..b9b61837
+--- /dev/null
++++ b/src/main/java/mimc/event/player/PlayerNonLocalTeleportEvent.java
+@@ -0,0 +1,21 @@
++package mimc.event.player;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Player;
++import org.bukkit.event.player.PlayerTeleportEvent;
++import org.jetbrains.annotations.NotNull;
++import org.jetbrains.annotations.Nullable;
++
++public class PlayerNonLocalTeleportEvent extends PlayerTeleportEvent {
++    public final int fromDimension;
++    public final int toDimension;
++    @NotNull
++    public final TeleportCause cause;
++
++    public PlayerNonLocalTeleportEvent(@NotNull Player player, @NotNull Location from, int fromDimension, @Nullable Location to, int toDimension, @NotNull final TeleportCause cause) {
++        super(player, from, to);
++        this.fromDimension = fromDimension;
++        this.toDimension = toDimension;
++        this.cause = cause;
++    }
++}

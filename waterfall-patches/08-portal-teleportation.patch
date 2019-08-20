@@ -1,0 +1,658 @@
+commit 3ee145f74e6b0d7fe7bfc5f64bcc3b17413f2d4c
+Author: Yannick Motton <ymotton@gmail.com>
+Date:   Tue Aug 20 03:12:33 2019 +0200
+
+    Adds support for portal teleporting between nodes
+
+diff --git a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+index d404ffe9..fcd59275 100644
+--- a/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
++++ b/proxy/src/main/java/net/md_5/bungee/ServerConnector.java
+@@ -260,66 +260,69 @@ public class ServerConnector extends PacketHandler
+             user.getTabListHandler().onServerChange();
+ 
+             // MIMC start
+-//            Scoreboard serverScoreboard = user.getServerSentScoreboard();
+-//            if ( !user.isDisableEntityMetadataRewrite() ) { // Waterfall
+-//            for ( Objective objective : serverScoreboard.getObjectives() )
+-//            {
+-//                user.unsafe().sendPacket( new ScoreboardObjective( objective.getName(), objective.getValue(), ScoreboardObjective.HealthDisplay.fromString( objective.getType() ), (byte) 1 ) );
+-//            }
+-//            for ( Score score : serverScoreboard.getScores() )
+-//            {
+-//                user.unsafe().sendPacket( new ScoreboardScore( score.getItemName(), (byte) 1, score.getScoreName(), score.getValue() ) );
+-//            }
+-//            for ( Team team : serverScoreboard.getTeams() )
+-//            {
+-//                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.Team( team.getName() ) );
+-//            }
+-//            } // Waterfall
+-//            serverScoreboard.clear();
+-//
+-//            for ( UUID bossbar : user.getSentBossBars() )
+-//            {
+-//                // Send remove bossbar packet
+-//                user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.BossBar( bossbar, 1 ) );
+-//            }
+-//            user.getSentBossBars().clear();
+-//
+-//            // Update debug info from login packet
+-//            user.unsafe().sendPacket( new EntityStatus( user.getClientEntityId(), login.isReducedDebugInfo() ? EntityStatus.DEBUG_INFO_REDUCED : EntityStatus.DEBUG_INFO_NORMAL ) );
+-//
+-//            user.setDimensionChange( true );
+-//            if ( !user.isDisableEntityMetadataRewrite() && login.getDimension() == user.getDimension() ) // Waterfall - defer
+-//            {
+-//                user.unsafe().sendPacket( new Respawn( ( login.getDimension() >= 0 ? -1 : 0 ), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
+-//            }
+-//
+-//            user.setServerEntityId( login.getEntityId() );
+-//            // Waterfall start
+-//            if ( user.isDisableEntityMetadataRewrite() ) {
+-//                // Ensure that we maintain consistency
+-//                user.setClientEntityId( login.getEntityId() );
+-//
+-//                // Only send if we are not in the same dimension
+-//                if (user.getDimension() != login.getDimension()) {
+-//                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++            if (((BungeeCord)bungee).partitionManager.didPlayerJustChangeDimension(user.getName())) {
++
++//                Scoreboard serverScoreboard = user.getServerSentScoreboard();
++//                if ( !user.isDisableEntityMetadataRewrite() ) { // Waterfall
++//                for ( Objective objective : serverScoreboard.getObjectives() )
++//                {
++//                    user.unsafe().sendPacket( new ScoreboardObjective( objective.getName(), objective.getValue(), ScoreboardObjective.HealthDisplay.fromString( objective.getType() ), (byte) 1 ) );
++//                }
++//                for ( Score score : serverScoreboard.getScores() )
++//                {
++//                    user.unsafe().sendPacket( new ScoreboardScore( score.getItemName(), (byte) 1, score.getScoreName(), score.getValue() ) );
+ //                }
+-//
+-//                Login modLogin = new Login( login.getEntityId(),login.getGameMode(), login.getDimension(),
+-//                        login.getDifficulty(), login.getMaxPlayers(), login.getLevelType(), login.getViewDistance(), login.isReducedDebugInfo() );
+-//                user.unsafe().sendPacket(modLogin);
+-//
+-//                // Only send if we're in the same dimension
+-//                if (user.getDimension() == login.getDimension()) {
+-//                    user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++//                for ( Team team : serverScoreboard.getTeams() )
++//                {
++//                    user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.Team( team.getName() ) );
+ //                }
+-//            }
+-//            // Waterfall end
+-//            user.unsafe().sendPacket( new Respawn( login.getDimension(), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
+-//            if ( user.getPendingConnection().getVersion() >= ProtocolConstants.MINECRAFT_1_14 )
+-//            {
+-//                user.unsafe().sendPacket( new ViewDistance( login.getViewDistance() ) );
+-//            }
+-//            user.setDimension( login.getDimension() );
++//                } // Waterfall
++//                serverScoreboard.clear();
++
++                for ( UUID bossbar : user.getSentBossBars() )
++                {
++                    // Send remove bossbar packet
++                    user.unsafe().sendPacket( new net.md_5.bungee.protocol.packet.BossBar( bossbar, 1 ) );
++                }
++                user.getSentBossBars().clear();
++
++                // Update debug info from login packet
++                user.unsafe().sendPacket( new EntityStatus( user.getClientEntityId(), login.isReducedDebugInfo() ? EntityStatus.DEBUG_INFO_REDUCED : EntityStatus.DEBUG_INFO_NORMAL ) );
++
++                user.setDimensionChange( true );
++                if ( !user.isDisableEntityMetadataRewrite() && login.getDimension() == user.getDimension() ) // Waterfall - defer
++                {
++                    user.unsafe().sendPacket( new Respawn( ( login.getDimension() >= 0 ? -1 : 0 ), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
++                }
++
++                user.setServerEntityId( login.getEntityId() );
++                // Waterfall start
++                if ( user.isDisableEntityMetadataRewrite() ) {
++                    // Ensure that we maintain consistency
++                    user.setClientEntityId( login.getEntityId() );
++
++                    // Only send if we are not in the same dimension
++                    if (user.getDimension() != login.getDimension()) {
++                        user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++                    }
++
++                    Login modLogin = new Login( login.getEntityId(),login.getGameMode(), login.getDimension(),
++                            login.getDifficulty(), login.getMaxPlayers(), login.getLevelType(), login.getViewDistance(), login.isReducedDebugInfo() );
++                    user.unsafe().sendPacket(modLogin);
++
++                    // Only send if we're in the same dimension
++                    if (user.getDimension() == login.getDimension()) {
++                        user.unsafe().sendPacket( new Respawn(user.getDimension() == 0 ? -1 : 0, login.getDifficulty(), login.getGameMode(), login.getLevelType()));
++                    }
++                }
++                // Waterfall end
++                user.unsafe().sendPacket( new Respawn( login.getDimension(), login.getDifficulty(), login.getGameMode(), login.getLevelType() ) );
++                if ( user.getPendingConnection().getVersion() >= ProtocolConstants.MINECRAFT_1_14 )
++                {
++                    user.unsafe().sendPacket( new ViewDistance( login.getViewDistance() ) );
++                }
++                user.setDimension( login.getDimension() );
++            }
+             // MIMC end
+ 
+             // Remove from old servers
+diff --git a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+index 88bbf40e..e9e67ff7 100644
+--- a/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
++++ b/proxy/src/main/java/net/md_5/bungee/connection/DownstreamBridge.java
+@@ -400,27 +400,6 @@ public class DownstreamBridge extends PacketHandler
+     {
+         PluginMessageEvent event = new PluginMessageEvent( server, con, pluginMessage.getTag(), pluginMessage.getData().clone() );
+ 
+-        if ( pluginMessage.getTag().equals(PartitionManager.CHANNEL_NAME) )
+-        {
+-            PartitionManager partitionManager = ((BungeeCord)this.bungee).partitionManager;
+-
+-            DataInput di = pluginMessage.getStream();
+-            String subChannel = di.readUTF();
+-
+-            if (subChannel.equals("migration-prepared"))
+-            {
+-                String serverName = di.readUTF();
+-                String playerName = di.readUTF();
+-
+-                partitionManager.completeMigration(playerName);
+-            }
+-            else if (subChannel.equals("migration-preparation-failed"))
+-            {
+-                String serverName = di.readUTF();
+-                String playerName = di.readUTF();
+-            }
+-        }
+-
+         if ( bungee.getPluginManager().callEvent( event ).isCancelled() )
+         {
+             throw CancelSendSignal.INSTANCE;
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+index e8d5324b..089f597a 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/MigrationRequest.java
+@@ -5,10 +5,12 @@ public class MigrationRequest {
+     public final Partition target;
+     public final Long requestedAt;
+     public Long completedAt;
++    public boolean portal;
+ 
+-    public MigrationRequest(Player player, Partition target) {
++    public MigrationRequest(Player player, Partition target, boolean portal) {
+         this.player = player;
+         this.target = target;
++        this.portal = portal;
+         this.requestedAt = System.currentTimeMillis();
+     }
+ 
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+index 8afbca89..09bd1c8f 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Partition.java
+@@ -4,7 +4,7 @@ import java.util.*;
+ import java.util.function.Consumer;
+ 
+ public class Partition {
+-    public final long MERGE_RADIUS = 8 * 2 * 32 * 16; // 2 Region files in the nether radius
++    public final long MERGE_RADIUS = 2 * 32 * 16; // 2 Region files in the nether radius
+ 
+     public String serverName;
+     public final List<Player> players = new ArrayList<>();
+@@ -18,11 +18,10 @@ public class Partition {
+ 
+     public boolean isInMergeRadius(Player player) {
+         PlayerLocation location = player.location;
+-        Long overworldKey = pair((int)player.location.x >> 9, (int)player.location.z >> 9);
+-        Long netherKey = pair((int)player.location.x >> 12, (int)player.location.z >> 12);
+-        if (location.dimension == Dimension.OVERWORLD && netherRegions.contains(netherKey)) return true;
+-        if (location.dimension == Dimension.NETHER && netherRegions.contains(overworldKey)) return true;
+-        if (location.dimension == Dimension.END && endRegions.contains(overworldKey)) return true;
++        Long key = pair((int)player.location.x >> 9, (int)player.location.z >> 9);
++        if (location.dimension == Dimension.OVERWORLD && overworldRegions.contains(key)) return true;
++        if (location.dimension == Dimension.NETHER && netherRegions.contains(key)) return true;
++        if (location.dimension == Dimension.END && endRegions.contains(key)) return true;
+ 
+         if (isSpawnPartition) {
+             if (player.location.distance(new PlayerLocation(Dimension.OVERWORLD, 0, 70, 0, 0, 0)) <= MERGE_RADIUS) {
+@@ -47,15 +46,16 @@ public class Partition {
+         return this.players.size();
+     }
+ 
++    Set<Long> overworldRegions = new HashSet<>();
+     Set<Long> netherRegions = new HashSet<>();
+     Set<Long> endRegions = new HashSet<>();
+     public void track(PlayerLocation location) {
+         int x, z;
+         Set<Long> regions;
+         if (location.dimension == Dimension.OVERWORLD) {
+-            x = (int)location.x >> 12;
+-            z = (int)location.z >> 12;
+-            regions = this.netherRegions;
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.overworldRegions;
+         } else if (location.dimension == Dimension.NETHER) {
+             x = (int)location.x >> 9;
+             z = (int)location.z >> 9;
+@@ -71,9 +71,9 @@ public class Partition {
+         int x, z;
+         Set<Long> regions;
+         if (location.dimension == Dimension.OVERWORLD) {
+-            x = (int)location.x >> 12;
+-            z = (int)location.z >> 12;
+-            regions = this.netherRegions;
++            x = (int)location.x >> 9;
++            z = (int)location.z >> 9;
++            regions = this.overworldRegions;
+         } else if (location.dimension == Dimension.NETHER) {
+             x = (int)location.x >> 9;
+             z = (int)location.z >> 9;
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+index da2e1233..219aabd1 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PartitionManager.java
+@@ -11,7 +11,6 @@ import net.md_5.bungee.api.plugin.Listener;
+ import net.md_5.bungee.api.plugin.Plugin;
+ import net.md_5.bungee.event.EventHandler;
+ import net.md_5.bungee.mimc.util.CopyOnWriteSet;
+-
+ import java.util.*;
+ import java.util.logging.Level;
+ 
+@@ -90,6 +89,7 @@ public class PartitionManager implements Listener {
+         }
+         return player;
+     }
++
+     public boolean tryTeleportPlayer(UUID uuid
+             , double x, boolean xIsRelative
+             , double y, boolean yIsRelative
+@@ -97,8 +97,9 @@ public class PartitionManager implements Listener {
+             , float yaw, float pitch) {
+         Player player = getPlayer(uuid);
+         if (player != null) {
++            // If the player is teleporting, don't filter out the player location packets
+             MigrationRequest request = getLatestMigration(player.name);
+-            if (request != null) {
++            if (request != null && !request.portal) {
+                 // Grace period after a new player connecting that we do not proxy teleports
+                 // This eliminates the rubber banding issue when migrating between nodes
+                 if (System.currentTimeMillis() < request.completedAt + 5_000) {
+@@ -118,6 +119,19 @@ public class PartitionManager implements Listener {
+         }
+         return true;
+     }
++    public boolean portalTeleport(String playerName, Dimension dimension, double x, double y, double z, float yaw, float pitch) {
++        Player player = getPlayer(playerName);
++        if (player != null) {
++            player.respawnTo = dimension;
++            player.teleportTo(x, y, z, yaw, pitch);
++            migratePlayer(player, true);
++            if (player.partition != null) {
++                bungeeCord.getLogger().warning(String.format("MIMC | portalTeleport() Partition %s tracking %s", player.partition.serverName, player.location));
++                player.partition.track(player.location);
++            }
++        }
++        return true;
++    }
+ 
+     public Player addPlayer(UserConnection userCon) {
+         String name = userCon.getName();
+@@ -150,24 +164,52 @@ public class PartitionManager implements Listener {
+         return partition;
+     }
+ 
+-    public void requestMerge(Partition source, Partition target) {
++    public void requestMerge(Partition source, Partition target, boolean portal) {
+         for (int i=source.players.size()-1;i>-1;i--) {
+             Player p = source.players.get(i);
+-            requestMigration(p, target);
++            requestMigration(p, target, portal);
+         }
+     }
+ 
+-    public void requestMigration(Player p, Partition target) {
+-        MigrationRequest request = new MigrationRequest(p, target);
++    public void requestMigration(Player p, Partition target, boolean portal) {
++        bungeeCord.getLogger().warning(String.format("MIMC | requestMigration(%s, %s) to p.location=%s", p.name, target.serverName, p.location));
+ 
+-        // A previous request was sent out... waiting for response from that
+-        // TODO: what if we never get a response?
+-        if (this.migrationRequests.contains(request)) {
+-            return;
+-        }
+-        this.migrationRequests.add(request);
++        // If we're migrating the user between partitions on the same node, just send a teleport command
++        // otherwise request the node to prepare for migration
++        if (p.partition.getServerName().equals(target.getServerName())) {
++            ByteArrayDataOutput out = ByteStreams.newDataOutput();
++            out.writeUTF( "confirm-teleport" );
++            ServerInfo sourceServer = p.userCon.getServer().getInfo();
++
++            out.writeInt(p.location.dimension.value);
++            out.writeDouble(p.location.x);
++            out.writeDouble(p.location.y);
++            out.writeDouble(p.location.z);
++            out.writeFloat(p.location.yaw);
++            out.writeFloat(p.location.pitch);
+ 
+-        sendMigrationMessage(p, target);
++            sourceServer.sendData(PartitionManager.CHANNEL_NAME, out.toByteArray());
++        } else {
++            MigrationRequest request = new MigrationRequest(p, target, portal);
++
++            // A previous request was sent out... waiting for response from that
++            // TODO: what if we never get a response?
++            if (this.migrationRequests.contains(request)) {
++                return;
++            }
++            this.migrationRequests.add(request);
++
++            if (!portal) {
++                ByteArrayDataOutput out = ByteStreams.newDataOutput();
++                out.writeUTF( "prepare-migration" );
++                ServerInfo sourceServer = p.userCon.getServer().getInfo();
++
++                out.writeUTF( target.serverName );
++                out.writeUTF( p.name );
++
++                sourceServer.sendData(PartitionManager.CHANNEL_NAME, out.toByteArray());
++            }
++        }
+     }
+ 
+     MigrationRequest getLatestMigrationRequest(String playerName) {
+@@ -206,29 +248,30 @@ public class PartitionManager implements Listener {
+     }
+ 
+     public boolean completeMigration(String playerName) {
+-        bungeeCord.getLogger().warning( String.format("MIMC | completeMigration for %s", playerName) );
+-
+         MigrationRequest request = getLatestMigrationRequest(playerName);
+         if (request != null) {
+             Player p = request.player;
+             Partition previous = p.partition;
+             Partition target = request.target;
+ 
+-            p.migrateTo(target);
++            bungeeCord.getLogger().warning( String.format("MIMC | completeMigration(%s) moving from %s to %s at %s", playerName, previous.serverName, target.serverName, p.location));
+ 
+             p.userCon.connect(servers.get(target.serverName), (result, error) -> {
+                 if (result) {
++                    bungeeCord.getLogger().warning( String.format("MIMC | completeMigration(%s) moved from %s to %s COMPLETE", playerName, previous.serverName, target.serverName) );
+                     completedMigrations.add(request.complete());
++                    p.migrateTo(target);
+                     previous.untrack(p.location);
+                     target.track(p.location);
+                 } else {
+-                    String errorMessage = "Failed to connect " + p.userCon.getName() + " to " + request.target.getServerName();
++                    String errorMessage = String.format("MIMC | completeMigration(%s) failed moving from %s to %s", p.userCon.getName(), previous.serverName, target.serverName);
+                     this.bungeeCord.getLogger().log(Level.WARNING, errorMessage, error);
+                     p.userCon.disconnect(errorMessage);
+                 }
++
++                this.migrationRequests.remove(request);
+             });
+ 
+-            this.migrationRequests.remove(request);
+             return true;
+         }
+         return false;
+@@ -237,6 +280,7 @@ public class PartitionManager implements Listener {
+         Player player = getPlayer(uuid);
+         if (player != null) {
+             player.respawnTo = dimension;
++            bungeeCord.getLogger().warning( String.format("MIMC | respawnPlayer(%s) will respawn %s", player.name, dimension));
+         }
+     }
+ 
+@@ -251,7 +295,7 @@ public class PartitionManager implements Listener {
+                         .stream().filter(x -> x.getServerName().equals(serverName))
+                         .mapToLong(x -> x.players.size())
+                         .sum();
+-                bungeeCord.getLogger().info(String.format("Server %s has %d players.", serverName, playerCount));
++                bungeeCord.getLogger().info(String.format("MIMC | Server %s has %d players.", serverName, playerCount));
+                 serverPartitionCounts.put(serverName, playerCount);
+             }
+         }
+@@ -267,8 +311,8 @@ public class PartitionManager implements Listener {
+                 .max(Comparator.comparing(Map.Entry::getValue))
+                 .get().getKey();
+ 
+-        bungeeCord.getLogger().info(String.format("Server with fewest players %s", serverWithFewestPartitions.getKey()));
+-        bungeeCord.getLogger().info(String.format("Server with highest TPS %s", serverWithHighestTPS));
++        bungeeCord.getLogger().info(String.format("MIMC | Server with fewest players %s", serverWithFewestPartitions.getKey()));
++        bungeeCord.getLogger().info(String.format("MIMC | Server with highest TPS %s", serverWithHighestTPS));
+ 
+         if(serverWithFewestPartitions.getValue() == 0)
+         {
+@@ -279,14 +323,15 @@ public class PartitionManager implements Listener {
+             return serverWithHighestTPS;
+         }
+     }
++
+     Partition migratePlayer(Player p) {
++        return migratePlayer(p, false);
++    }
++
++    Partition migratePlayer(Player p, boolean portal) {
+         Partition previous = p.partition;
+         Partition target;
+ 
+-        if (previous != null) {
+-            previous.track(p.location);
+-        }
+-
+         List<Partition> partitionsInRange = new ArrayList<>();
+         List<Partition> partitionsNotInRange = new ArrayList<>();
+ 
+@@ -302,11 +347,15 @@ public class PartitionManager implements Listener {
+ 
+         if (partitionsInRange.isEmpty()) {
+             // If it is a new player, and no other partition is in range, add a new partition
+-            if (previous == null) {
++            if (previous == null || portal) {
+                 String serverName = suggestServerForNewPartition();
+                 target = new Partition(serverName);
+                 bungeeCord.getLogger().warning(String.format("MIMC | Adding player at %s to new partition on node %s", p.location, serverName));
+                 this.partitions.add(target);
++
++                if (portal) {
++                    requestMigration(p, target, portal);
++                }
+             } else {
+                 // The player moved, but didn't come in merge distance of another partition
+                 target = previous;
+@@ -314,7 +363,7 @@ public class PartitionManager implements Listener {
+         } else if (partitionsInRange.size() > 1) {
+             target = partitionsInRange.stream().max(Comparator.comparing(Partition::size)).get();
+ 
+-            if (this.migrationRequests.contains(new MigrationRequest(p, target))) {
++            if (this.migrationRequests.contains(new MigrationRequest(p, target, portal))) {
+                 return target;
+             }
+ 
+@@ -323,7 +372,7 @@ public class PartitionManager implements Listener {
+ 
+             for (int i = 1; i < partitionsInRange.size(); i++) {
+                 Partition partitionToBeMerged = partitionsInRange.get(i);
+-                requestMerge(partitionToBeMerged, target);
++                requestMerge(partitionToBeMerged, target, portal);
+             }
+             partitionsNotInRange.add(target);
+ 
+@@ -331,7 +380,7 @@ public class PartitionManager implements Listener {
+         } else {
+             target = partitionsInRange.get(0);
+ 
+-            if (this.migrationRequests.contains(new MigrationRequest(p, target))) {
++            if (this.migrationRequests.contains(new MigrationRequest(p, target, portal))) {
+                 return target;
+             }
+ 
+@@ -341,21 +390,11 @@ public class PartitionManager implements Listener {
+             } else if (target != previous) {
+                 // The player moved away from his previous partition, and is now in range of a new partition
+                 bungeeCord.getLogger().warning(String.format("MIMC | Migrating player at %s to other partition on node %s", p.location, target.getServerName()));
+-                requestMigration(p, target);
++                requestMigration(p, target, portal);
+             }
+         }
+         return target;
+     }
+-    void sendMigrationMessage(Player p, Partition target) {
+-        ByteArrayDataOutput out = ByteStreams.newDataOutput();
+-        out.writeUTF( "prepare-migration" );
+-        ServerInfo sourceServer = p.userCon.getServer().getInfo();
+-
+-        out.writeUTF( target.serverName );
+-        out.writeUTF( p.name );
+-
+-        sourceServer.sendData(PartitionManager.CHANNEL_NAME, out.toByteArray());
+-    }
+ 
+     public void removePlayer(String playerName) {
+         bungeeCord.getLogger().info(String.format("MIMC | Removing player %s", playerName));
+@@ -394,7 +433,21 @@ public class PartitionManager implements Listener {
+         ByteArrayDataInput in = ByteStreams.newDataInput(event.data);
+         String subChannel = in.readUTF();
+ 
+-        if(subChannel.equalsIgnoreCase("tps-report"))
++        if(subChannel.equalsIgnoreCase("migration-prepared"))
++        {
++            String serverName = in.readUTF();
++            String playerName = in.readUTF();
++
++            completeMigration(playerName);
++        }
++        else if (subChannel.equals("migration-preparation-failed"))
++        {
++            String serverName = in.readUTF();
++            String playerName = in.readUTF();
++
++            // TODO
++        }
++        else if(subChannel.equalsIgnoreCase("tps-report"))
+         {
+             int port = event.sender.getAddress().getPort();
+             double TPS = in.readDouble();
+@@ -402,7 +455,38 @@ public class PartitionManager implements Listener {
+             String serverName = this.serverPortMap.get(port);
+ 
+             this.serverTPSMap.replace(serverName, TPS);
+-            BungeeCord.getInstance().getLogger().warning("MIMC | " + TPS + " TPS on " + serverName);
++            // BungeeCord.getInstance().getLogger().warning("MIMC | " + TPS + " TPS on " + serverName);
++        }
++        else if(subChannel.equalsIgnoreCase("non-local-teleport"))
++        {
++            String playerName = in.readUTF();
++            int dimension = in.readInt();
++            double x = in.readDouble();
++            double y = in.readDouble();
++            double z = in.readDouble();
++            float yaw = in.readFloat();
++            float pitch = in.readFloat();
++
++            BungeeCord.getInstance().getLogger().warning(String.format("MIMC | Teleport intercepted, forwarding player %s to Dimension:%d X:%.02f Y:%.02f Z:%.02f", playerName, dimension, x, y, z));
++            portalTeleport(playerName, mapDimension(dimension), x, y, z, yaw, pitch);
++            completeMigration(playerName);
+         }
+     }
++
++    Dimension mapDimension(int from) {
++        switch (from) {
++            case -1: return Dimension.NETHER;
++            case 0: return Dimension.OVERWORLD;
++            case 1: return Dimension.END;
++        }
++        BungeeCord.getInstance().getLogger().warning("MIMC | Unexpected dimension value " + from);
++        return Dimension.OVERWORLD;
++    }
++
++    public boolean didPlayerJustChangeDimension(String playerName) {
++        MigrationRequest request = getLatestMigration(playerName);
++        if (request == null) return false;
++        long duration = request.completedAt == null ? 0 : (System.currentTimeMillis() - request.completedAt);
++        return duration < 5000 && request.portal;
++    }
+ }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+index 697ab92e..a197ee6e 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/Player.java
+@@ -30,24 +30,50 @@ public class Player {
+     public PlayerLocation teleportTo(double x, double y, double z, float yaw, float pitch) {
+         Dimension dimension = this.respawnTo;
+         if (dimension == null) {
+-            dimension = location.dimension;
++            if (location == null || location.dimension == null) {
++                dimension = Dimension.OVERWORLD;
++            } else {
++                dimension = location.dimension;
++            }
++        } else {
++            this.respawnTo = null;
+         }
+         return teleportTo(new PlayerLocation(dimension, x, y, z, yaw, pitch));
+     }
+ 
+     public PlayerLocation move(double x, double y, double z) {
+-        if (this.location == null) {
+-            this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, 0, 0);
+-        } else {
+-            this.location = this.location.move(x, y, z);
++        PlayerLocation newLocation = new PlayerLocation(Dimension.OVERWORLD, x, y, z, 0, 0);
++        if (this.location != null) {
++            if (newLocation.distance(this.location) < 50) {
++                newLocation = this.location.move(x, y, z);
++            } else {
++                newLocation = null;
++            }
++        }
++        // Only process client-side movement if we're not in the process of teleporting him to a different dimension
++        if (newLocation != null) {
++            this.location = newLocation;
++            if (partition != null) {
++                this.partition.track(newLocation);
++            }
+         }
+         return this.location;
+     }
+     public PlayerLocation move(double x, double y, double z, float yaw, float pitch) {
+-        if (this.location == null) {
+-            this.location = new PlayerLocation(Dimension.OVERWORLD, x, y, z, yaw, pitch);
+-        } else {
+-            this.location = this.location.move(x, y, z, yaw, pitch);
++        // Only process client-side movement if we're not in the process of teleporting him to a different dimension
++        PlayerLocation newLocation = new PlayerLocation(Dimension.OVERWORLD, x, y, z, yaw, pitch);
++        if (this.location != null) {
++            if (newLocation.distance(this.location) < 50) {
++                newLocation = this.location.move(x, y, z);
++            } else {
++                newLocation = null;
++            }
++        }
++        if (newLocation != null) {
++            this.location = newLocation;
++            if (partition != null) {
++                this.partition.track(newLocation);
++            }
+         }
+         return this.location;
+     }
+diff --git a/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+index eafb1619..c3cd1ec6 100644
+--- a/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
++++ b/proxy/src/main/java/net/md_5/bungee/mimc/PlayerLocation.java
+@@ -88,7 +88,7 @@ public class PlayerLocation {
+ 
+     public double distance(PlayerLocation other) {
+         double dx = x - other.x;
+-        double dy = y - other.y;
+-        return Math.sqrt(dx*dx+dy*dy);
++        double dz = z - other.z;
++        return Math.sqrt(dx*dx+dz*dz);
+     }
+ }
+\ No newline at end of file
